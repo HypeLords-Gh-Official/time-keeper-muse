@@ -143,7 +143,11 @@ export default function Dashboard() {
 
             {/* Quick Actions */}
             <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-              <Button variant="outline" className="h-auto py-4 flex-col gap-2">
+              <Button
+                variant="outline"
+                className="h-auto py-4 flex-col gap-2"
+                onClick={() => navigate('/history')}
+              >
                 <History className="w-5 h-5" />
                 <span className="text-sm">History</span>
               </Button>
