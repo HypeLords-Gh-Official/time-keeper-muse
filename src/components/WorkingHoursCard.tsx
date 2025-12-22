@@ -1,14 +1,14 @@
 import { Clock, TrendingUp, Coffee } from 'lucide-react';
 import { cn } from '@/lib/utils';
-import { useAuth } from '@/contexts/AuthContext';
+import { AttendanceRecord } from '@/types/attendance';
 
 interface WorkingHoursCardProps {
   className?: string;
+  hours?: number;
+  records?: AttendanceRecord[];
 }
 
-export function WorkingHoursCard({ className }: WorkingHoursCardProps) {
-  const { getTodayHours, clockState } = useAuth();
-  const hours = getTodayHours();
+export function WorkingHoursCard({ className, hours = 0, records = [] }: WorkingHoursCardProps) {
   const wholeHours = Math.floor(hours);
   const minutes = Math.round((hours - wholeHours) * 60);
 
@@ -68,7 +68,7 @@ export function WorkingHoursCard({ className }: WorkingHoursCardProps) {
               <span className="text-xs font-medium uppercase">Breaks</span>
             </div>
             <div className="text-lg font-bold text-foreground">
-              {clockState.todayRecords.filter((r) => r.activity === 'break').length}
+              {records.filter((r) => r.activity === 'break').length}
             </div>
           </div>
         </div>
