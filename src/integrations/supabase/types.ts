@@ -14,6 +14,36 @@ export type Database = {
   }
   public: {
     Tables: {
+      attendance_records: {
+        Row: {
+          activity: string
+          clock_in_time: string
+          clock_out_time: string | null
+          created_at: string
+          id: string
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          activity: string
+          clock_in_time?: string
+          clock_out_time?: string | null
+          created_at?: string
+          id?: string
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          activity?: string
+          clock_in_time?: string
+          clock_out_time?: string | null
+          created_at?: string
+          id?: string
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
       login_verifications: {
         Row: {
           id: string

@@ -80,6 +80,37 @@ export default function Dashboard() {
         setUserRole(roleData as UserRole);
       }
 
+      // Fetch today's attendance records
+      const today = new Date();
+      today.setHours(0, 0, 0, 0);
+      
+      const { data: attendanceData } = await supabase
+        .from('attendance_records')
+        .select('*')
+        .eq('user_id', session.user.id)
+        .gte('clock_in_time', today.toISOString())
+        .order('clock_in_time', { ascending: true });
+
+      if (attendanceData && attendanceData.length > 0) {
+        const records: AttendanceRecord[] = attendanceData.map(record => ({
+          id: record.id,
+          userId: record.user_id,
+          clockInTime: new Date(record.clock_in_time),
+          clockOutTime: record.clock_out_time ? new Date(record.clock_out_time) : undefined,
+          activity: record.activity as ActivityType,
+        }));
+        
+        setTodayRecords(records);
+        
+        // Check if there's an active (not clocked out) record
+        const activeRecord = records.find(r => !r.clockOutTime);
+        if (activeRecord) {
+          setClockStatus(activeRecord.activity === 'break' ? 'on-break' : 'clocked-in');
+          setCurrentActivity(activeRecord.activity);
+          setClockInTime(activeRecord.clockInTime);
+        }
+      }
+
       setLoading(false);
     };
 
@@ -90,48 +121,90 @@ export default function Dashboard() {
     setShowActivityModal(true);
   };
 
-  const handleConfirmClockIn = () => {
-    if (selectedActivity) {
+  const handleConfirmClockIn = async () => {
+    if (selectedActivity && profile) {
       const now = new Date();
-      const newRecord: AttendanceRecord = {
-        id: Date.now().toString(),
-        userId: profile?.id || '',
-        clockInTime: now,
-        activity: selectedActivity,
-      };
-
-      setClockStatus('clocked-in');
-      setCurrentActivity(selectedActivity);
-      setClockInTime(now);
-      setTodayRecords(prev => [...prev, newRecord]);
-      setShowActivityModal(false);
-      setSelectedActivity(null);
       
-      const activity = ACTIVITIES.find((a) => a.id === selectedActivity);
-      toast.success('Clocked In Successfully!', {
-        description: `You're now working on: ${activity?.label}`,
-      });
+      try {
+        // Get session for user_id
+        const { data: { session } } = await supabase.auth.getSession();
+        if (!session) return;
+
+        // Insert attendance record to database
+        const { data: record, error } = await supabase
+          .from('attendance_records')
+          .insert({
+            user_id: session.user.id,
+            clock_in_time: now.toISOString(),
+            activity: selectedActivity,
+          })
+          .select()
+          .single();
+
+        if (error) throw error;
+
+        const newRecord: AttendanceRecord = {
+          id: record.id,
+          userId: profile.id,
+          clockInTime: now,
+          activity: selectedActivity,
+        };
+
+        setClockStatus('clocked-in');
+        setCurrentActivity(selectedActivity);
+        setClockInTime(now);
+        setTodayRecords(prev => [...prev, newRecord]);
+        setShowActivityModal(false);
+        setSelectedActivity(null);
+        
+        const activity = ACTIVITIES.find((a) => a.id === selectedActivity);
+        toast.success('Clocked In Successfully!', {
+          description: `You're now working on: ${activity?.label}`,
+        });
+      } catch (error) {
+        console.error('Error clocking in:', error);
+        toast.error('Failed to clock in');
+      }
     }
   };
 
-  const handleClockOut = () => {
-    setTodayRecords(prev => {
-      const updated = [...prev];
-      if (updated.length > 0 && !updated[updated.length - 1].clockOutTime) {
-        updated[updated.length - 1] = {
-          ...updated[updated.length - 1],
-          clockOutTime: new Date(),
-        };
+  const handleClockOut = async () => {
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) return;
+
+      // Update the latest attendance record with clock_out_time
+      const latestRecord = todayRecords.find(r => !r.clockOutTime);
+      if (latestRecord) {
+        const { error } = await supabase
+          .from('attendance_records')
+          .update({ clock_out_time: new Date().toISOString() })
+          .eq('id', latestRecord.id);
+
+        if (error) throw error;
       }
-      return updated;
-    });
-    
-    setClockStatus('clocked-out');
-    setCurrentActivity(null);
-    setClockInTime(null);
-    toast.success('Clocked Out', {
-      description: 'Have a great rest of your day!',
-    });
+
+      setTodayRecords(prev => {
+        const updated = [...prev];
+        if (updated.length > 0 && !updated[updated.length - 1].clockOutTime) {
+          updated[updated.length - 1] = {
+            ...updated[updated.length - 1],
+            clockOutTime: new Date(),
+          };
+        }
+        return updated;
+      });
+      
+      setClockStatus('clocked-out');
+      setCurrentActivity(null);
+      setClockInTime(null);
+      toast.success('Clocked Out', {
+        description: 'Have a great rest of your day!',
+      });
+    } catch (error) {
+      console.error('Error clocking out:', error);
+      toast.error('Failed to clock out');
+    }
   };
 
   const handleLogout = async () => {
@@ -192,18 +265,36 @@ export default function Dashboard() {
         <div className="grid lg:grid-cols-3 gap-8">
           {/* Left Column - Clock Actions */}
           <div className="lg:col-span-2 space-y-8">
-            {/* Welcome Section */}
-            <div className="text-center lg:text-left">
-              <h1 className="font-display text-3xl font-bold text-foreground mb-2">
-                Welcome, {profile?.full_name?.split(' ')[0]}!
-              </h1>
-              <p className="text-muted-foreground">
-                {clockStatus === 'clocked-in'
-                  ? `You're currently working on: ${activityInfo?.label}`
-                  : clockStatus === 'on-break'
-                  ? "You're on a break"
-                  : "Ready to start your day?"}
-              </p>
+            {/* Welcome Section with Profile Photo */}
+            <div className="flex items-center gap-6 p-6 bg-card rounded-2xl border shadow-soft">
+              {profile?.profile_photo_url ? (
+                <img 
+                  src={profile.profile_photo_url} 
+                  alt={profile.full_name}
+                  className="w-20 h-20 md:w-24 md:h-24 rounded-full object-cover border-4 border-primary/20 shadow-lg"
+                />
+              ) : (
+                <div className="w-20 h-20 md:w-24 md:h-24 rounded-full bg-primary/10 flex items-center justify-center border-4 border-primary/20">
+                  <span className="text-2xl md:text-3xl font-bold text-primary">
+                    {profile?.full_name?.split(' ').map(n => n[0]).join('')}
+                  </span>
+                </div>
+              )}
+              <div className="flex-1">
+                <h1 className="font-display text-2xl md:text-3xl font-bold text-foreground mb-1">
+                  Welcome, {profile?.full_name?.split(' ')[0]}!
+                </h1>
+                <p className="text-muted-foreground mb-2">
+                  {profile?.department || 'Staff Member'} • {userRole?.role || 'staff'}
+                </p>
+                <p className="text-sm text-muted-foreground">
+                  {clockStatus === 'clocked-in'
+                    ? `Currently working on: ${activityInfo?.label}`
+                    : clockStatus === 'on-break'
+                    ? "You're on a break"
+                    : "Ready to start your day?"}
+                </p>
+              </div>
             </div>
 
             {/* Time and Clock Section */}

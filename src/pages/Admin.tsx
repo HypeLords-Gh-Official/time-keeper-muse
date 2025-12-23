@@ -1,21 +1,20 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Logo } from '@/components/Logo';
 import { StatusBadge } from '@/components/StatusBadge';
 import { Button } from '@/components/ui/button';
+import { supabase } from '@/integrations/supabase/client';
 import {
   ArrowLeft,
   Users,
   Clock,
-  BarChart3,
   Settings,
   Download,
   Search,
   Filter,
-  ChevronDown,
   TrendingUp,
   AlertCircle,
-  CheckCircle2,
+  Loader2,
 } from 'lucide-react';
 import { Input } from '@/components/ui/input';
 import {
@@ -25,101 +24,202 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
+import { format, isToday, differenceInHours, differenceInMinutes } from 'date-fns';
 
-// Mock data for admin dashboard
-const MOCK_STAFF_ATTENDANCE = [
-  {
-    id: '1',
-    name: 'Kwame Asante',
-    department: 'Tours',
-    status: 'clocked-in' as const,
-    activity: 'Guided Tour',
-    clockInTime: '08:00 AM',
-    hoursToday: 4.5,
-  },
-  {
-    id: '2',
-    name: 'Akua Mensah',
-    department: 'Exhibitions',
-    status: 'clocked-in' as const,
-    activity: 'Exhibition Setup',
-    clockInTime: '07:30 AM',
-    hoursToday: 5.0,
-  },
-  {
-    id: '3',
-    name: 'Yaw Boateng',
-    department: 'Maintenance',
-    status: 'on-break' as const,
-    activity: 'Break',
-    clockInTime: '08:15 AM',
-    hoursToday: 4.25,
-  },
-  {
-    id: '4',
-    name: 'Ama Darko',
-    department: 'Administration',
-    status: 'clocked-out' as const,
-    activity: 'N/A',
-    clockInTime: '—',
-    hoursToday: 0,
-  },
-  {
-    id: '5',
-    name: 'Kofi Owusu',
-    department: 'Administration',
-    status: 'clocked-in' as const,
-    activity: 'Administrative',
-    clockInTime: '09:00 AM',
-    hoursToday: 3.5,
-  },
-];
+interface StaffMember {
+  id: string;
+  user_id: string;
+  full_name: string;
+  email: string;
+  department: string | null;
+  profile_photo_url: string | null;
+  is_approved: boolean;
+}
 
-const STATS = [
-  {
-    label: 'Staff Present',
-    value: '12',
-    total: '/15',
-    icon: Users,
-    color: 'text-success',
-    bgColor: 'bg-success/10',
-  },
-  {
-    label: 'On Break',
-    value: '2',
-    icon: Clock,
-    color: 'text-warning',
-    bgColor: 'bg-warning/10',
-  },
-  {
-    label: 'Late Today',
-    value: '1',
-    icon: AlertCircle,
-    color: 'text-destructive',
-    bgColor: 'bg-destructive/10',
-  },
-  {
-    label: 'Avg. Hours',
-    value: '6.2h',
-    icon: TrendingUp,
-    color: 'text-primary',
-    bgColor: 'bg-primary/10',
-  },
-];
+interface AttendanceRecord {
+  id: string;
+  user_id: string;
+  clock_in_time: string;
+  clock_out_time: string | null;
+  activity: string;
+  created_at: string;
+  updated_at: string;
+}
+
+interface StaffAttendance {
+  id: string;
+  name: string;
+  email: string;
+  department: string;
+  status: 'clocked-in' | 'on-break' | 'clocked-out';
+  activity: string;
+  clockInTime: string;
+  hoursToday: number;
+  profilePhoto: string | null;
+  isApproved: boolean;
+}
 
 export default function Admin() {
   const navigate = useNavigate();
   const [searchQuery, setSearchQuery] = useState('');
   const [filterDepartment, setFilterDepartment] = useState('all');
+  const [loading, setLoading] = useState(true);
+  const [staffAttendance, setStaffAttendance] = useState<StaffAttendance[]>([]);
+  const [stats, setStats] = useState({
+    present: 0,
+    total: 0,
+    onBreak: 0,
+    lateToday: 0,
+    avgHours: 0,
+  });
 
-  const filteredStaff = MOCK_STAFF_ATTENDANCE.filter((staff) => {
-    const matchesSearch = staff.name.toLowerCase().includes(searchQuery.toLowerCase());
+  useEffect(() => {
+    fetchStaffData();
+  }, []);
+
+  const fetchStaffData = async () => {
+    try {
+      // Fetch all staff profiles
+      const { data: profiles, error: profilesError } = await supabase
+        .from('profiles')
+        .select('*');
+
+      if (profilesError) throw profilesError;
+
+      // Fetch today's attendance records
+      const today = new Date();
+      today.setHours(0, 0, 0, 0);
+      
+      const { data: attendanceRecords, error: attendanceError } = await supabase
+        .from('attendance_records')
+        .select('*')
+        .gte('clock_in_time', today.toISOString());
+
+      if (attendanceError) throw attendanceError;
+
+      // Fetch login verifications for today
+      const { data: loginVerifications } = await supabase
+        .from('login_verifications')
+        .select('*')
+        .gte('verified_at', today.toISOString());
+
+      // Process staff data with attendance
+      const staffData: StaffAttendance[] = (profiles || []).map((profile: StaffMember) => {
+        const userAttendance = (attendanceRecords || []).filter(
+          (record: AttendanceRecord) => record.user_id === profile.user_id
+        );
+        
+        const latestRecord = userAttendance.length > 0 
+          ? userAttendance.reduce((latest: AttendanceRecord, current: AttendanceRecord) => 
+              new Date(current.clock_in_time) > new Date(latest.clock_in_time) ? current : latest
+            )
+          : null;
+
+        // Calculate total hours worked today
+        const hoursToday = userAttendance.reduce((total: number, record: AttendanceRecord) => {
+          const clockIn = new Date(record.clock_in_time);
+          const clockOut = record.clock_out_time ? new Date(record.clock_out_time) : new Date();
+          const hours = differenceInMinutes(clockOut, clockIn) / 60;
+          return total + hours;
+        }, 0);
+
+        // Determine status
+        let status: 'clocked-in' | 'on-break' | 'clocked-out' = 'clocked-out';
+        let activity = 'N/A';
+        let clockInTime = '—';
+
+        if (latestRecord && !latestRecord.clock_out_time) {
+          status = latestRecord.activity === 'break' ? 'on-break' : 'clocked-in';
+          activity = latestRecord.activity;
+          clockInTime = format(new Date(latestRecord.clock_in_time), 'hh:mm a');
+        }
+
+        return {
+          id: profile.id,
+          name: profile.full_name,
+          email: profile.email,
+          department: profile.department || 'Unassigned',
+          status,
+          activity,
+          clockInTime,
+          hoursToday: Math.round(hoursToday * 10) / 10,
+          profilePhoto: profile.profile_photo_url,
+          isApproved: profile.is_approved || false,
+        };
+      });
+
+      setStaffAttendance(staffData);
+
+      // Calculate stats
+      const present = staffData.filter(s => s.status !== 'clocked-out').length;
+      const onBreak = staffData.filter(s => s.status === 'on-break').length;
+      const totalHours = staffData.reduce((sum, s) => sum + s.hoursToday, 0);
+      const workingStaff = staffData.filter(s => s.hoursToday > 0).length;
+
+      setStats({
+        present,
+        total: staffData.length,
+        onBreak,
+        lateToday: 0, // Can implement late detection based on expected clock-in time
+        avgHours: workingStaff > 0 ? Math.round((totalHours / workingStaff) * 10) / 10 : 0,
+      });
+
+    } catch (error) {
+      console.error('Error fetching staff data:', error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const filteredStaff = staffAttendance.filter((staff) => {
+    const matchesSearch = staff.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+                          staff.email.toLowerCase().includes(searchQuery.toLowerCase());
     const matchesDepartment =
       filterDepartment === 'all' || staff.department === filterDepartment;
     return matchesSearch && matchesDepartment;
   });
 
-  const departments = [...new Set(MOCK_STAFF_ATTENDANCE.map((s) => s.department))];
+  const departments = [...new Set(staffAttendance.map((s) => s.department))];
+
+  const STATS = [
+    {
+      label: 'Staff Present',
+      value: stats.present.toString(),
+      total: `/${stats.total}`,
+      icon: Users,
+      color: 'text-success',
+      bgColor: 'bg-success/10',
+    },
+    {
+      label: 'On Break',
+      value: stats.onBreak.toString(),
+      icon: Clock,
+      color: 'text-warning',
+      bgColor: 'bg-warning/10',
+    },
+    {
+      label: 'Pending Approval',
+      value: staffAttendance.filter(s => !s.isApproved).length.toString(),
+      icon: AlertCircle,
+      color: 'text-destructive',
+      bgColor: 'bg-destructive/10',
+    },
+    {
+      label: 'Avg. Hours',
+      value: `${stats.avgHours}h`,
+      icon: TrendingUp,
+      color: 'text-primary',
+      bgColor: 'bg-primary/10',
+    },
+  ];
+
+  if (loading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-background">
+        <Loader2 className="w-8 h-8 animate-spin text-primary" />
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-background">
@@ -140,9 +240,9 @@ export default function Admin() {
           </div>
 
           <div className="flex items-center gap-3">
-            <Button variant="outline" size="sm">
+            <Button variant="outline" size="sm" onClick={fetchStaffData}>
               <Download className="w-4 h-4 mr-2" />
-              Export Report
+              Refresh
             </Button>
             <Button variant="ghost" size="icon">
               <Settings className="w-5 h-5" />
@@ -234,6 +334,9 @@ export default function Admin() {
                   <th className="text-left py-4 px-6 text-sm font-medium text-muted-foreground">
                     Hours Today
                   </th>
+                  <th className="text-left py-4 px-6 text-sm font-medium text-muted-foreground">
+                    Approved
+                  </th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-border">
@@ -245,26 +348,46 @@ export default function Admin() {
                   >
                     <td className="py-4 px-6">
                       <div className="flex items-center gap-3">
-                        <div className="w-10 h-10 rounded-full bg-primary/10 flex items-center justify-center">
-                          <span className="text-sm font-medium text-primary">
-                            {staff.name
-                              .split(' ')
-                              .map((n) => n[0])
-                              .join('')}
-                          </span>
+                        {staff.profilePhoto ? (
+                          <img 
+                            src={staff.profilePhoto} 
+                            alt={staff.name}
+                            className="w-10 h-10 rounded-full object-cover"
+                          />
+                        ) : (
+                          <div className="w-10 h-10 rounded-full bg-primary/10 flex items-center justify-center">
+                            <span className="text-sm font-medium text-primary">
+                              {staff.name
+                                .split(' ')
+                                .map((n) => n[0])
+                                .join('')}
+                            </span>
+                          </div>
+                        )}
+                        <div>
+                          <span className="font-medium text-foreground block">{staff.name}</span>
+                          <span className="text-xs text-muted-foreground">{staff.email}</span>
                         </div>
-                        <span className="font-medium text-foreground">{staff.name}</span>
                       </div>
                     </td>
                     <td className="py-4 px-6 text-muted-foreground">{staff.department}</td>
                     <td className="py-4 px-6">
                       <StatusBadge status={staff.status} showPulse={false} />
                     </td>
-                    <td className="py-4 px-6 text-foreground">{staff.activity}</td>
+                    <td className="py-4 px-6 text-foreground capitalize">{staff.activity.replace('-', ' ')}</td>
                     <td className="py-4 px-6 text-muted-foreground">{staff.clockInTime}</td>
                     <td className="py-4 px-6">
                       <span className="font-medium text-foreground">
                         {staff.hoursToday > 0 ? `${staff.hoursToday}h` : '—'}
+                      </span>
+                    </td>
+                    <td className="py-4 px-6">
+                      <span className={`px-2 py-1 rounded-full text-xs font-medium ${
+                        staff.isApproved 
+                          ? 'bg-success/10 text-success' 
+                          : 'bg-warning/10 text-warning'
+                      }`}>
+                        {staff.isApproved ? 'Yes' : 'Pending'}
                       </span>
                     </td>
                   </tr>
