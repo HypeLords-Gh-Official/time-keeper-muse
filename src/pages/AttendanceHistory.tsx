@@ -4,7 +4,6 @@ import { format, startOfMonth, endOfMonth, eachDayOfInterval, isSameDay, isToday
 import { Logo } from '@/components/Logo';
 import { Button } from '@/components/ui/button';
 import { Calendar } from '@/components/ui/calendar';
-import { useAuth } from '@/contexts/AuthContext';
 import { ACTIVITIES, AttendanceRecord, ActivityType } from '@/types/attendance';
 import { ArrowLeft, Clock, TrendingUp, Calendar as CalendarIcon, ChevronLeft, ChevronRight } from 'lucide-react';
 import { cn } from '@/lib/utils';
@@ -43,14 +42,13 @@ const generateMockHistory = (): AttendanceRecord[] => {
 };
 
 export default function AttendanceHistory() {
-  const { user, clockState } = useAuth();
   const navigate = useNavigate();
   const [selectedDate, setSelectedDate] = useState<Date>(new Date());
   const [currentMonth, setCurrentMonth] = useState<Date>(new Date());
   
   // Combine mock history with today's records
   const mockHistory = useMemo(() => generateMockHistory(), []);
-  const allRecords = [...mockHistory, ...clockState.todayRecords];
+  const allRecords = [...mockHistory];
   
   // Get records for selected date
   const selectedDateRecords = allRecords.filter((record) =>
