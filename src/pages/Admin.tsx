@@ -3,7 +3,6 @@ import { useNavigate } from 'react-router-dom';
 import { Logo } from '@/components/Logo';
 import { StatusBadge } from '@/components/StatusBadge';
 import { Button } from '@/components/ui/button';
-import { useAuth } from '@/contexts/AuthContext';
 import {
   ArrowLeft,
   Users,
@@ -109,7 +108,6 @@ const STATS = [
 ];
 
 export default function Admin() {
-  const { user } = useAuth();
   const navigate = useNavigate();
   const [searchQuery, setSearchQuery] = useState('');
   const [filterDepartment, setFilterDepartment] = useState('all');
