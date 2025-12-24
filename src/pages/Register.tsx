@@ -40,6 +40,7 @@ export default function Register() {
   const [profilePhoto, setProfilePhoto] = useState<Blob | null>(null);
   const [showCamera, setShowCamera] = useState(false);
   const [generatedQRCode, setGeneratedQRCode] = useState<string | null>(null);
+  const [staffNumber, setStaffNumber] = useState<string | null>(null);
 
   const handleFormSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -123,17 +124,28 @@ export default function Register() {
 
       if (profileError) throw profileError;
 
-      // 4. Create user role (default to staff)
+      // 4. Create user role (admin for Administration department, staff for others)
+      const assignedRole = department === 'Administration' ? 'admin' : 'staff';
       const { error: roleError } = await supabase
         .from('user_roles')
         .insert({
           user_id: userId,
-          role: 'staff',
+          role: assignedRole,
         });
 
       if (roleError) throw roleError;
 
+      // 5. Fetch the generated staff number
+      const { data: createdProfile } = await supabase
+        .from('profiles')
+        .select('staff_number')
+        .eq('user_id', userId)
+        .single();
+
+      const staffNumber = createdProfile?.staff_number;
+
       setGeneratedQRCode(qrCode);
+      setStaffNumber(staffNumber || null);
       setStep('success');
       toast.success('Registration successful!');
     } catch (error: any) {
@@ -167,9 +179,19 @@ export default function Register() {
               <h1 className="font-display text-2xl font-bold text-foreground mb-2">
                 Welcome, {fullName}!
               </h1>
-              <p className="text-muted-foreground mb-8">
+              <p className="text-muted-foreground mb-4">
                 Your account has been created. Save your QR code to log in quickly.
               </p>
+
+              {staffNumber && (
+                <div className="mb-6 p-4 bg-primary/10 rounded-xl">
+                  <p className="text-sm text-muted-foreground">Your Staff Number</p>
+                  <p className="text-2xl font-bold text-primary">{staffNumber}</p>
+                  <p className="text-xs text-muted-foreground mt-1">
+                    Use this with your password to log in
+                  </p>
+                </div>
+              )}
 
               <QRCodeDisplay value={generatedQRCode} userName={fullName} />
 

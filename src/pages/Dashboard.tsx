@@ -6,10 +6,11 @@ import { StatusBadge } from '@/components/StatusBadge';
 import { ActivityCard } from '@/components/ActivityCard';
 import { ClockButton } from '@/components/ClockButton';
 import { WorkingHoursCard } from '@/components/WorkingHoursCard';
+import { SettingsDropdown } from '@/components/SettingsDropdown';
 import { Button } from '@/components/ui/button';
 import { ACTIVITIES, ActivityType, ClockStatus, AttendanceRecord } from '@/types/attendance';
 import { toast } from 'sonner';
-import { LogOut, Settings, User, ChevronRight, History, QrCode } from 'lucide-react';
+import { LogOut, User, ChevronRight, History, QrCode } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
 import { QRCodeDisplay } from '@/components/QRCodeDisplay';
 import {
@@ -27,6 +28,7 @@ interface UserProfile {
   department: string | null;
   profile_photo_url: string | null;
   qr_code: string;
+  staff_number?: string | null;
 }
 
 interface UserRole {
@@ -359,10 +361,7 @@ export default function Dashboard() {
                 <QrCode className="w-5 h-5" />
                 <span className="text-sm">My QR Code</span>
               </Button>
-              <Button variant="outline" className="h-auto py-4 flex-col gap-2">
-                <Settings className="w-5 h-5" />
-                <span className="text-sm">Settings</span>
-              </Button>
+              <SettingsDropdown profile={profile} userRole={userRole?.role} />
               {(userRole?.role === 'supervisor' || userRole?.role === 'admin') && (
                 <Button
                   variant="outline"

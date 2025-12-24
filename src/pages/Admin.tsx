@@ -34,6 +34,7 @@ interface StaffMember {
   department: string | null;
   profile_photo_url: string | null;
   is_approved: boolean;
+  staff_number: string | null;
 }
 
 interface AttendanceRecord {
@@ -51,6 +52,7 @@ interface StaffAttendance {
   name: string;
   email: string;
   department: string;
+  staffNumber: string;
   status: 'clocked-in' | 'on-break' | 'clocked-out';
   activity: string;
   clockInTime: string;
@@ -139,6 +141,7 @@ export default function Admin() {
           name: profile.full_name,
           email: profile.email,
           department: profile.department || 'Unassigned',
+          staffNumber: profile.staff_number || '—',
           status,
           activity,
           clockInTime,
@@ -222,29 +225,29 @@ export default function Admin() {
   }
 
   return (
-    <div className="min-h-screen bg-background">
+    <div className="min-h-screen bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900">
       {/* Header */}
-      <header className="bg-card border-b sticky top-0 z-50">
+      <header className="bg-slate-800/80 backdrop-blur-sm border-b border-slate-700 sticky top-0 z-50">
         <div className="container mx-auto px-4 py-4 flex items-center justify-between">
           <div className="flex items-center gap-4">
-            <Button variant="ghost" size="icon" onClick={() => navigate('/dashboard')}>
+            <Button variant="ghost" size="icon" onClick={() => navigate('/dashboard')} className="text-slate-300 hover:text-white hover:bg-slate-700">
               <ArrowLeft className="w-5 h-5" />
             </Button>
             <Logo size="sm" showText={false} />
             <div>
-              <h1 className="font-display text-xl font-bold">Admin Dashboard</h1>
-              <p className="text-sm text-muted-foreground">
+              <h1 className="font-display text-xl font-bold text-white">Admin Dashboard</h1>
+              <p className="text-sm text-slate-400">
                 Real-time attendance monitoring
               </p>
             </div>
           </div>
 
           <div className="flex items-center gap-3">
-            <Button variant="outline" size="sm" onClick={fetchStaffData}>
+            <Button variant="outline" size="sm" onClick={fetchStaffData} className="border-slate-600 text-slate-300 hover:bg-slate-700 hover:text-white">
               <Download className="w-4 h-4 mr-2" />
               Refresh
             </Button>
-            <Button variant="ghost" size="icon">
+            <Button variant="ghost" size="icon" className="text-slate-300 hover:text-white hover:bg-slate-700">
               <Settings className="w-5 h-5" />
             </Button>
           </div>
@@ -258,7 +261,7 @@ export default function Admin() {
           {STATS.map((stat) => (
             <div
               key={stat.label}
-              className="bg-card rounded-2xl border shadow-soft p-5 animate-fade-in"
+              className="bg-slate-800/50 backdrop-blur-sm rounded-2xl border border-slate-700 shadow-lg p-5 animate-fade-in"
             >
               <div className="flex items-center justify-between mb-3">
                 <div className={`p-2 rounded-xl ${stat.bgColor}`}>
@@ -266,35 +269,35 @@ export default function Admin() {
                 </div>
               </div>
               <div className="flex items-baseline gap-1">
-                <span className="text-3xl font-bold text-foreground">{stat.value}</span>
+                <span className="text-3xl font-bold text-white">{stat.value}</span>
                 {stat.total && (
-                  <span className="text-lg text-muted-foreground">{stat.total}</span>
+                  <span className="text-lg text-slate-400">{stat.total}</span>
                 )}
               </div>
-              <p className="text-sm text-muted-foreground mt-1">{stat.label}</p>
+              <p className="text-sm text-slate-400 mt-1">{stat.label}</p>
             </div>
           ))}
         </div>
 
         {/* Staff Attendance Table */}
-        <div className="bg-card rounded-2xl border shadow-soft overflow-hidden">
-          <div className="p-6 border-b">
+        <div className="bg-slate-800/50 backdrop-blur-sm rounded-2xl border border-slate-700 shadow-lg overflow-hidden">
+          <div className="p-6 border-b border-slate-700">
             <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
-              <h2 className="font-display text-xl font-bold">Staff Attendance</h2>
+              <h2 className="font-display text-xl font-bold text-white">Staff Attendance</h2>
               
               <div className="flex items-center gap-3">
                 <div className="relative flex-1 md:w-64">
-                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
                   <Input
                     placeholder="Search staff..."
                     value={searchQuery}
                     onChange={(e) => setSearchQuery(e.target.value)}
-                    className="pl-10"
+                    className="pl-10 bg-slate-700/50 border-slate-600 text-white placeholder:text-slate-400"
                   />
                 </div>
                 
                 <Select value={filterDepartment} onValueChange={setFilterDepartment}>
-                  <SelectTrigger className="w-40">
+                  <SelectTrigger className="w-40 bg-slate-700/50 border-slate-600 text-white">
                     <Filter className="w-4 h-4 mr-2" />
                     <SelectValue placeholder="Department" />
                   </SelectTrigger>
@@ -314,10 +317,13 @@ export default function Admin() {
           {/* Table */}
           <div className="overflow-x-auto">
             <table className="w-full">
-              <thead className="bg-secondary/50">
+              <thead className="bg-slate-700/50">
                 <tr>
                   <th className="text-left py-4 px-6 text-sm font-medium text-muted-foreground">
                     Staff Member
+                  </th>
+                  <th className="text-left py-4 px-6 text-sm font-medium text-muted-foreground">
+                    Staff No.
                   </th>
                   <th className="text-left py-4 px-6 text-sm font-medium text-muted-foreground">
                     Department
@@ -339,11 +345,11 @@ export default function Admin() {
                   </th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-border">
+              <tbody className="divide-y divide-slate-700">
                 {filteredStaff.map((staff, index) => (
                   <tr
                     key={staff.id}
-                    className="hover:bg-secondary/30 transition-colors animate-fade-in"
+                    className="hover:bg-slate-700/30 transition-colors animate-fade-in"
                     style={{ animationDelay: `${index * 50}ms` }}
                   >
                     <td className="py-4 px-6">
@@ -365,19 +371,22 @@ export default function Admin() {
                           </div>
                         )}
                         <div>
-                          <span className="font-medium text-foreground block">{staff.name}</span>
-                          <span className="text-xs text-muted-foreground">{staff.email}</span>
+                          <span className="font-medium text-white block">{staff.name}</span>
+                          <span className="text-xs text-slate-400">{staff.email}</span>
                         </div>
                       </div>
                     </td>
-                    <td className="py-4 px-6 text-muted-foreground">{staff.department}</td>
+                    <td className="py-4 px-6">
+                      <span className="font-mono text-sm text-primary font-medium">{staff.staffNumber}</span>
+                    </td>
+                    <td className="py-4 px-6 text-slate-400">{staff.department}</td>
                     <td className="py-4 px-6">
                       <StatusBadge status={staff.status} showPulse={false} />
                     </td>
-                    <td className="py-4 px-6 text-foreground capitalize">{staff.activity.replace('-', ' ')}</td>
-                    <td className="py-4 px-6 text-muted-foreground">{staff.clockInTime}</td>
+                    <td className="py-4 px-6 text-white capitalize">{staff.activity.replace('-', ' ')}</td>
+                    <td className="py-4 px-6 text-slate-400">{staff.clockInTime}</td>
                     <td className="py-4 px-6">
-                      <span className="font-medium text-foreground">
+                      <span className="font-medium text-white">
                         {staff.hoursToday > 0 ? `${staff.hoursToday}h` : '—'}
                       </span>
                     </td>

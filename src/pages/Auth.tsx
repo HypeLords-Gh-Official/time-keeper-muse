@@ -8,9 +8,9 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { toast } from 'sonner';
 import { supabase } from '@/integrations/supabase/client';
-import { QrCode, Mail, Loader2, UserPlus } from 'lucide-react';
+import { QrCode, Mail, Loader2, UserPlus, Hash } from 'lucide-react';
 
-type LoginMethod = 'email' | 'qr';
+type LoginMethod = 'email' | 'qr' | 'staffNumber';
 type LoginStep = 'method' | 'credentials' | 'scan';
 
 export default function Auth() {
@@ -22,6 +22,9 @@ export default function Auth() {
   // Email login
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  
+  // Staff number login
+  const [staffNumber, setStaffNumber] = useState('');
   
   // QR login
   const [scannedQRCode, setScannedQRCode] = useState<string | null>(null);
@@ -47,8 +50,79 @@ export default function Auth() {
 
       if (error) throw error;
 
-      toast.success('Login successful!');
-      navigate('/dashboard');
+      // Check user role and redirect accordingly
+      const { data: { session } } = await supabase.auth.getSession();
+      if (session) {
+        const { data: roleData } = await supabase
+          .from('user_roles')
+          .select('role')
+          .eq('user_id', session.user.id)
+          .maybeSingle();
+
+        toast.success('Login successful!');
+        if (roleData?.role === 'admin') {
+          navigate('/admin');
+        } else {
+          navigate('/dashboard');
+        }
+      }
+    } catch (error: any) {
+      console.error('Login error:', error);
+      toast.error(error.message || 'Login failed');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleStaffNumberLogin = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setLoading(true);
+
+    try {
+      // Look up email by staff number
+      const { data: profile, error: lookupError } = await supabase
+        .from('profiles')
+        .select('email, is_approved')
+        .eq('staff_number', staffNumber.toUpperCase())
+        .maybeSingle();
+
+      if (lookupError) throw lookupError;
+      
+      if (!profile) {
+        toast.error('Invalid staff number');
+        setLoading(false);
+        return;
+      }
+
+      if (!profile.is_approved) {
+        toast.error('Your account is pending approval');
+        setLoading(false);
+        return;
+      }
+
+      const { error } = await supabase.auth.signInWithPassword({
+        email: profile.email,
+        password,
+      });
+
+      if (error) throw error;
+
+      // Check user role and redirect accordingly
+      const { data: { session } } = await supabase.auth.getSession();
+      if (session) {
+        const { data: roleData } = await supabase
+          .from('user_roles')
+          .select('role')
+          .eq('user_id', session.user.id)
+          .maybeSingle();
+
+        toast.success('Login successful!');
+        if (roleData?.role === 'admin') {
+          navigate('/admin');
+        } else {
+          navigate('/dashboard');
+        }
+      }
     } catch (error: any) {
       console.error('Login error:', error);
       toast.error(error.message || 'Login failed');
@@ -109,8 +183,22 @@ export default function Auth() {
 
       if (error) throw error;
 
-      toast.success('Login successful!');
-      navigate('/dashboard');
+      // Check user role and redirect accordingly
+      const { data: { session } } = await supabase.auth.getSession();
+      if (session) {
+        const { data: roleData } = await supabase
+          .from('user_roles')
+          .select('role')
+          .eq('user_id', session.user.id)
+          .maybeSingle();
+
+        toast.success('Login successful!');
+        if (roleData?.role === 'admin') {
+          navigate('/admin');
+        } else {
+          navigate('/dashboard');
+        }
+      }
     } catch (error: any) {
       console.error('Login error:', error);
       toast.error(error.message || 'Login failed');
@@ -154,6 +242,18 @@ export default function Auth() {
                 >
                   <QrCode className="w-6 h-6" />
                   Scan QR Code
+                </Button>
+
+                <Button
+                  onClick={() => {
+                    setMethod('staffNumber');
+                    setStep('credentials');
+                  }}
+                  variant="outline"
+                  className="w-full h-16 text-lg gap-3"
+                >
+                  <Hash className="w-6 h-6" />
+                  Use Staff Number
                 </Button>
 
                 <Button
@@ -219,6 +319,82 @@ export default function Auth() {
                     placeholder="Enter your email"
                     value={email}
                     onChange={(e) => setEmail(e.target.value)}
+                    required
+                  />
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="password">Password</Label>
+                  <Input
+                    id="password"
+                    type="password"
+                    placeholder="Enter your password"
+                    value={password}
+                    onChange={(e) => setPassword(e.target.value)}
+                    required
+                  />
+                </div>
+
+                <Button
+                  type="submit"
+                  disabled={loading}
+                  className="w-full gap-2 gradient-primary text-primary-foreground"
+                >
+                  {loading && <Loader2 className="w-4 h-4 animate-spin" />}
+                  Sign In
+                </Button>
+              </form>
+
+              <Button
+                onClick={() => setStep('method')}
+                variant="ghost"
+                className="w-full mt-4"
+              >
+                Back to login options
+              </Button>
+            </div>
+          </div>
+        </main>
+
+        <footer className="p-6 text-center text-sm text-muted-foreground">
+          <p>© 2024 Nkyinkyim Museum. All rights reserved.</p>
+        </footer>
+      </div>
+    );
+  }
+
+  // Staff Number credentials screen
+  if (step === 'credentials' && method === 'staffNumber') {
+    return (
+      <div className="min-h-screen gradient-warm pattern-adinkra flex flex-col">
+        <header className="p-6">
+          <Logo size="md" />
+        </header>
+
+        <main className="flex-1 flex flex-col items-center justify-center px-4 pb-12">
+          <div className="w-full max-w-md animate-fade-in">
+            <div className="bg-card rounded-3xl shadow-elevated border p-8 animate-slide-up">
+              <div className="text-center mb-8">
+                <div className="w-14 h-14 bg-primary/10 rounded-full flex items-center justify-center mx-auto mb-4">
+                  <Hash className="w-7 h-7 text-primary" />
+                </div>
+                <h1 className="font-display text-2xl font-bold text-foreground mb-2">
+                  Staff Number Login
+                </h1>
+                <p className="text-muted-foreground">
+                  Enter your staff number and password
+                </p>
+              </div>
+
+              <form onSubmit={handleStaffNumberLogin} className="space-y-5">
+                <div className="space-y-2">
+                  <Label htmlFor="staffNumber">Staff Number</Label>
+                  <Input
+                    id="staffNumber"
+                    type="text"
+                    placeholder="e.g. STF001"
+                    value={staffNumber}
+                    onChange={(e) => setStaffNumber(e.target.value)}
                     required
                   />
                 </div>
