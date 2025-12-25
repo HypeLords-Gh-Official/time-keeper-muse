@@ -50,23 +50,9 @@ export default function Auth() {
 
       if (error) throw error;
 
-      // Check user role and approval status
+      // Check user role and redirect accordingly
       const { data: { session } } = await supabase.auth.getSession();
       if (session) {
-        // Check if account is approved
-        const { data: profile } = await supabase
-          .from('profiles')
-          .select('is_approved')
-          .eq('user_id', session.user.id)
-          .maybeSingle();
-
-        if (!profile?.is_approved) {
-          await supabase.auth.signOut();
-          toast.error('Your account is pending approval');
-          setLoading(false);
-          return;
-        }
-
         const { data: roleData } = await supabase
           .from('user_roles')
           .select('role')

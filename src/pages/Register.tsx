@@ -124,12 +124,13 @@ export default function Register() {
 
       if (profileError) throw profileError;
 
-      // 4. Create user role (all new users start as 'staff' - admins can promote later)
+      // 4. Create user role (admin for Administration department, staff for others)
+      const assignedRole = department === 'Administration' ? 'admin' : 'staff';
       const { error: roleError } = await supabase
         .from('user_roles')
         .insert({
           user_id: userId,
-          role: 'staff',
+          role: assignedRole,
         });
 
       if (roleError) throw roleError;
