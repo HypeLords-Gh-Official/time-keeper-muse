@@ -1,40 +1,39 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Logo } from '@/components/Logo';
-import { StatusBadge } from '@/components/StatusBadge';
 import { Button } from '@/components/ui/button';
 import { supabase } from '@/integrations/supabase/client';
+import { toast } from 'sonner';
 import {
   ArrowLeft,
   Users,
   Clock,
   Settings,
-  Download,
-  Search,
-  Filter,
+  RefreshCw,
   TrendingUp,
   AlertCircle,
   Loader2,
+  UserCheck,
+  UserX,
 } from 'lucide-react';
-import { Input } from '@/components/ui/input';
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select';
-import { format, isToday, differenceInHours, differenceInMinutes } from 'date-fns';
+import { differenceInMinutes } from 'date-fns';
+import { StaffManagementTable, StaffMember } from '@/components/admin/StaffManagementTable';
+import { StaffEditDialog } from '@/components/admin/StaffEditDialog';
+import { StaffHistoryDialog } from '@/components/admin/StaffHistoryDialog';
+import { WorkStatusDialog } from '@/components/admin/WorkStatusDialog';
+import { DepartmentDialog } from '@/components/admin/DepartmentDialog';
+import { DeleteConfirmDialog } from '@/components/admin/DeleteConfirmDialog';
 
-interface StaffMember {
+interface ProfileRow {
   id: string;
   user_id: string;
   full_name: string;
   email: string;
   department: string | null;
   profile_photo_url: string | null;
-  is_approved: boolean;
+  is_approved: boolean | null;
   staff_number: string | null;
+  work_status: string | null;
 }
 
 interface AttendanceRecord {
@@ -47,39 +46,51 @@ interface AttendanceRecord {
   updated_at: string;
 }
 
-interface StaffAttendance {
-  id: string;
-  name: string;
-  email: string;
-  department: string;
-  staffNumber: string;
-  status: 'clocked-in' | 'on-break' | 'clocked-out';
-  activity: string;
-  clockInTime: string;
-  hoursToday: number;
-  profilePhoto: string | null;
-  isApproved: boolean;
-}
-
 export default function Admin() {
   const navigate = useNavigate();
-  const [searchQuery, setSearchQuery] = useState('');
-  const [filterDepartment, setFilterDepartment] = useState('all');
   const [loading, setLoading] = useState(true);
-  const [staffAttendance, setStaffAttendance] = useState<StaffAttendance[]>([]);
+  const [refreshing, setRefreshing] = useState(false);
+  const [staffList, setStaffList] = useState<StaffMember[]>([]);
+  const [departments, setDepartments] = useState<string[]>([]);
   const [stats, setStats] = useState({
     present: 0,
     total: 0,
     onBreak: 0,
-    lateToday: 0,
+    pendingApproval: 0,
     avgHours: 0,
   });
+
+  // Dialog states
+  const [editDialog, setEditDialog] = useState<{ open: boolean; staff: StaffMember | null }>({
+    open: false,
+    staff: null,
+  });
+  const [historyDialog, setHistoryDialog] = useState<{ open: boolean; userId: string | null; name: string }>({
+    open: false,
+    userId: null,
+    name: '',
+  });
+  const [workStatusDialog, setWorkStatusDialog] = useState<{ open: boolean; staff: StaffMember | null }>({
+    open: false,
+    staff: null,
+  });
+  const [departmentDialog, setDepartmentDialog] = useState<{ open: boolean; staff: StaffMember | null }>({
+    open: false,
+    staff: null,
+  });
+  const [deleteDialog, setDeleteDialog] = useState<{ open: boolean; userId: string; name: string }>({
+    open: false,
+    userId: '',
+    name: '',
+  });
+  const [deleteLoading, setDeleteLoading] = useState(false);
 
   useEffect(() => {
     fetchStaffData();
   }, []);
 
-  const fetchStaffData = async () => {
+  const fetchStaffData = async (showRefresh = false) => {
+    if (showRefresh) setRefreshing(true);
     try {
       // Fetch all staff profiles
       const { data: profiles, error: profilesError } = await supabase
@@ -91,7 +102,7 @@ export default function Admin() {
       // Fetch today's attendance records
       const today = new Date();
       today.setHours(0, 0, 0, 0);
-      
+
       const { data: attendanceRecords, error: attendanceError } = await supabase
         .from('attendance_records')
         .select('*')
@@ -99,23 +110,18 @@ export default function Admin() {
 
       if (attendanceError) throw attendanceError;
 
-      // Fetch login verifications for today
-      const { data: loginVerifications } = await supabase
-        .from('login_verifications')
-        .select('*')
-        .gte('verified_at', today.toISOString());
-
       // Process staff data with attendance
-      const staffData: StaffAttendance[] = (profiles || []).map((profile: StaffMember) => {
+      const staffData: StaffMember[] = (profiles || []).map((profile: ProfileRow) => {
         const userAttendance = (attendanceRecords || []).filter(
           (record: AttendanceRecord) => record.user_id === profile.user_id
         );
-        
-        const latestRecord = userAttendance.length > 0 
-          ? userAttendance.reduce((latest: AttendanceRecord, current: AttendanceRecord) => 
-              new Date(current.clock_in_time) > new Date(latest.clock_in_time) ? current : latest
-            )
-          : null;
+
+        const latestRecord =
+          userAttendance.length > 0
+            ? userAttendance.reduce((latest: AttendanceRecord, current: AttendanceRecord) =>
+                new Date(current.clock_in_time) > new Date(latest.clock_in_time) ? current : latest
+              )
+            : null;
 
         // Calculate total hours worked today
         const hoursToday = userAttendance.reduce((total: number, record: AttendanceRecord) => {
@@ -133,16 +139,21 @@ export default function Admin() {
         if (latestRecord && !latestRecord.clock_out_time) {
           status = latestRecord.activity === 'break' ? 'on-break' : 'clocked-in';
           activity = latestRecord.activity;
-          clockInTime = format(new Date(latestRecord.clock_in_time), 'hh:mm a');
+          clockInTime = new Date(latestRecord.clock_in_time).toLocaleTimeString('en-US', {
+            hour: '2-digit',
+            minute: '2-digit',
+          });
         }
 
         return {
           id: profile.id,
+          user_id: profile.user_id,
           name: profile.full_name,
           email: profile.email,
           department: profile.department || 'Unassigned',
           staffNumber: profile.staff_number || '—',
           status,
+          workStatus: (profile.work_status as 'active' | 'on-leave' | 'off-duty' | 'off-work') || 'active',
           activity,
           clockInTime,
           hoursToday: Math.round(hoursToday * 10) / 10,
@@ -151,38 +162,151 @@ export default function Admin() {
         };
       });
 
-      setStaffAttendance(staffData);
+      setStaffList(staffData);
+
+      // Extract unique departments
+      const uniqueDepts = [...new Set(staffData.map((s) => s.department).filter(Boolean))];
+      setDepartments(uniqueDepts);
 
       // Calculate stats
-      const present = staffData.filter(s => s.status !== 'clocked-out').length;
-      const onBreak = staffData.filter(s => s.status === 'on-break').length;
+      const present = staffData.filter((s) => s.status !== 'clocked-out').length;
+      const onBreak = staffData.filter((s) => s.status === 'on-break').length;
+      const pendingApproval = staffData.filter((s) => !s.isApproved).length;
       const totalHours = staffData.reduce((sum, s) => sum + s.hoursToday, 0);
-      const workingStaff = staffData.filter(s => s.hoursToday > 0).length;
+      const workingStaff = staffData.filter((s) => s.hoursToday > 0).length;
 
       setStats({
         present,
         total: staffData.length,
         onBreak,
-        lateToday: 0, // Can implement late detection based on expected clock-in time
+        pendingApproval,
         avgHours: workingStaff > 0 ? Math.round((totalHours / workingStaff) * 10) / 10 : 0,
       });
-
     } catch (error) {
       console.error('Error fetching staff data:', error);
+      toast.error('Failed to fetch staff data');
     } finally {
       setLoading(false);
+      setRefreshing(false);
     }
   };
 
-  const filteredStaff = staffAttendance.filter((staff) => {
-    const matchesSearch = staff.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-                          staff.email.toLowerCase().includes(searchQuery.toLowerCase());
-    const matchesDepartment =
-      filterDepartment === 'all' || staff.department === filterDepartment;
-    return matchesSearch && matchesDepartment;
-  });
+  // Handler functions
+  const handleApprove = async (userId: string) => {
+    try {
+      const { error } = await supabase
+        .from('profiles')
+        .update({ is_approved: true })
+        .eq('user_id', userId);
 
-  const departments = [...new Set(staffAttendance.map((s) => s.department))];
+      if (error) throw error;
+      toast.success('Staff member approved');
+      fetchStaffData();
+    } catch (error) {
+      console.error('Error approving staff:', error);
+      toast.error('Failed to approve staff member');
+    }
+  };
+
+  const handleDecline = async (userId: string) => {
+    try {
+      // Delete the profile (this will cascade to other tables)
+      const { error } = await supabase.from('profiles').delete().eq('user_id', userId);
+
+      if (error) throw error;
+      toast.success('Staff application declined');
+      fetchStaffData();
+    } catch (error) {
+      console.error('Error declining staff:', error);
+      toast.error('Failed to decline staff application');
+    }
+  };
+
+  const handleDelete = async () => {
+    setDeleteLoading(true);
+    try {
+      // Delete user roles first
+      await supabase.from('user_roles').delete().eq('user_id', deleteDialog.userId);
+
+      // Delete attendance records
+      await supabase.from('attendance_records').delete().eq('user_id', deleteDialog.userId);
+
+      // Delete login verifications
+      await supabase.from('login_verifications').delete().eq('user_id', deleteDialog.userId);
+
+      // Delete profile
+      const { error } = await supabase.from('profiles').delete().eq('user_id', deleteDialog.userId);
+
+      if (error) throw error;
+      toast.success('Staff member deleted successfully');
+      setDeleteDialog({ open: false, userId: '', name: '' });
+      fetchStaffData();
+    } catch (error) {
+      console.error('Error deleting staff:', error);
+      toast.error('Failed to delete staff member');
+    } finally {
+      setDeleteLoading(false);
+    }
+  };
+
+  const handleEditSave = async (
+    userId: string,
+    data: { full_name: string; email: string; department: string; staff_number: string }
+  ) => {
+    try {
+      const { error } = await supabase
+        .from('profiles')
+        .update({
+          full_name: data.full_name,
+          email: data.email,
+          department: data.department,
+          staff_number: data.staff_number,
+        })
+        .eq('user_id', userId);
+
+      if (error) throw error;
+      toast.success('Profile updated successfully');
+      fetchStaffData();
+    } catch (error) {
+      console.error('Error updating profile:', error);
+      toast.error('Failed to update profile');
+      throw error;
+    }
+  };
+
+  const handleDepartmentSave = async (userId: string, department: string) => {
+    try {
+      const { error } = await supabase
+        .from('profiles')
+        .update({ department })
+        .eq('user_id', userId);
+
+      if (error) throw error;
+      toast.success('Department updated successfully');
+      fetchStaffData();
+    } catch (error) {
+      console.error('Error updating department:', error);
+      toast.error('Failed to update department');
+      throw error;
+    }
+  };
+
+  const handleWorkStatusSave = async (userId: string, workStatus: string) => {
+    try {
+      const { error } = await supabase
+        .from('profiles')
+        .update({ work_status: workStatus })
+        .eq('user_id', userId);
+
+      if (error) throw error;
+      toast.success('Work status updated successfully');
+      fetchStaffData();
+    } catch (error) {
+      console.error('Error updating work status:', error);
+      toast.error('Failed to update work status');
+      throw error;
+    }
+  };
 
   const STATS = [
     {
@@ -202,7 +326,7 @@ export default function Admin() {
     },
     {
       label: 'Pending Approval',
-      value: staffAttendance.filter(s => !s.isApproved).length.toString(),
+      value: stats.pendingApproval.toString(),
       icon: AlertCircle,
       color: 'text-destructive',
       bgColor: 'bg-destructive/10',
@@ -230,24 +354,37 @@ export default function Admin() {
       <header className="bg-slate-800/80 backdrop-blur-sm border-b border-slate-700 sticky top-0 z-50">
         <div className="container mx-auto px-4 py-4 flex items-center justify-between">
           <div className="flex items-center gap-4">
-            <Button variant="ghost" size="icon" onClick={() => navigate('/dashboard')} className="text-slate-300 hover:text-white hover:bg-slate-700">
+            <Button
+              variant="ghost"
+              size="icon"
+              onClick={() => navigate('/dashboard')}
+              className="text-slate-300 hover:text-white hover:bg-slate-700"
+            >
               <ArrowLeft className="w-5 h-5" />
             </Button>
             <Logo size="sm" showText={false} />
             <div>
               <h1 className="font-display text-xl font-bold text-white">Admin Dashboard</h1>
-              <p className="text-sm text-slate-400">
-                Real-time attendance monitoring
-              </p>
+              <p className="text-sm text-slate-400">Staff & Attendance Management</p>
             </div>
           </div>
 
           <div className="flex items-center gap-3">
-            <Button variant="outline" size="sm" onClick={fetchStaffData} className="border-slate-600 text-slate-300 hover:bg-slate-700 hover:text-white">
-              <Download className="w-4 h-4 mr-2" />
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => fetchStaffData(true)}
+              disabled={refreshing}
+              className="border-slate-600 text-slate-300 hover:bg-slate-700 hover:text-white"
+            >
+              <RefreshCw className={`w-4 h-4 mr-2 ${refreshing ? 'animate-spin' : ''}`} />
               Refresh
             </Button>
-            <Button variant="ghost" size="icon" className="text-slate-300 hover:text-white hover:bg-slate-700">
+            <Button
+              variant="ghost"
+              size="icon"
+              className="text-slate-300 hover:text-white hover:bg-slate-700"
+            >
               <Settings className="w-5 h-5" />
             </Button>
           </div>
@@ -256,6 +393,19 @@ export default function Admin() {
 
       {/* Main Content */}
       <main className="container mx-auto px-4 py-8">
+        {/* Quick Actions for Pending Approvals */}
+        {stats.pendingApproval > 0 && (
+          <div className="mb-6 p-4 bg-warning/10 border border-warning/30 rounded-xl">
+            <div className="flex items-center gap-3">
+              <AlertCircle className="w-5 h-5 text-warning" />
+              <p className="text-warning font-medium">
+                {stats.pendingApproval} staff member{stats.pendingApproval > 1 ? 's' : ''} pending
+                approval
+              </p>
+            </div>
+          </div>
+        )}
+
         {/* Stats Grid */}
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
           {STATS.map((stat) => (
@@ -270,148 +420,66 @@ export default function Admin() {
               </div>
               <div className="flex items-baseline gap-1">
                 <span className="text-3xl font-bold text-white">{stat.value}</span>
-                {stat.total && (
-                  <span className="text-lg text-slate-400">{stat.total}</span>
-                )}
+                {stat.total && <span className="text-lg text-slate-400">{stat.total}</span>}
               </div>
               <p className="text-sm text-slate-400 mt-1">{stat.label}</p>
             </div>
           ))}
         </div>
 
-        {/* Staff Attendance Table */}
-        <div className="bg-slate-800/50 backdrop-blur-sm rounded-2xl border border-slate-700 shadow-lg overflow-hidden">
-          <div className="p-6 border-b border-slate-700">
-            <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
-              <h2 className="font-display text-xl font-bold text-white">Staff Attendance</h2>
-              
-              <div className="flex items-center gap-3">
-                <div className="relative flex-1 md:w-64">
-                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
-                  <Input
-                    placeholder="Search staff..."
-                    value={searchQuery}
-                    onChange={(e) => setSearchQuery(e.target.value)}
-                    className="pl-10 bg-slate-700/50 border-slate-600 text-white placeholder:text-slate-400"
-                  />
-                </div>
-                
-                <Select value={filterDepartment} onValueChange={setFilterDepartment}>
-                  <SelectTrigger className="w-40 bg-slate-700/50 border-slate-600 text-white">
-                    <Filter className="w-4 h-4 mr-2" />
-                    <SelectValue placeholder="Department" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="all">All Departments</SelectItem>
-                    {departments.map((dept) => (
-                      <SelectItem key={dept} value={dept}>
-                        {dept}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-            </div>
-          </div>
-
-          {/* Table */}
-          <div className="overflow-x-auto">
-            <table className="w-full">
-              <thead className="bg-slate-700/50">
-                <tr>
-                  <th className="text-left py-4 px-6 text-sm font-medium text-muted-foreground">
-                    Staff Member
-                  </th>
-                  <th className="text-left py-4 px-6 text-sm font-medium text-muted-foreground">
-                    Staff No.
-                  </th>
-                  <th className="text-left py-4 px-6 text-sm font-medium text-muted-foreground">
-                    Department
-                  </th>
-                  <th className="text-left py-4 px-6 text-sm font-medium text-muted-foreground">
-                    Status
-                  </th>
-                  <th className="text-left py-4 px-6 text-sm font-medium text-muted-foreground">
-                    Current Activity
-                  </th>
-                  <th className="text-left py-4 px-6 text-sm font-medium text-muted-foreground">
-                    Clock In
-                  </th>
-                  <th className="text-left py-4 px-6 text-sm font-medium text-muted-foreground">
-                    Hours Today
-                  </th>
-                  <th className="text-left py-4 px-6 text-sm font-medium text-muted-foreground">
-                    Approved
-                  </th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-700">
-                {filteredStaff.map((staff, index) => (
-                  <tr
-                    key={staff.id}
-                    className="hover:bg-slate-700/30 transition-colors animate-fade-in"
-                    style={{ animationDelay: `${index * 50}ms` }}
-                  >
-                    <td className="py-4 px-6">
-                      <div className="flex items-center gap-3">
-                        {staff.profilePhoto ? (
-                          <img 
-                            src={staff.profilePhoto} 
-                            alt={staff.name}
-                            className="w-10 h-10 rounded-full object-cover"
-                          />
-                        ) : (
-                          <div className="w-10 h-10 rounded-full bg-primary/10 flex items-center justify-center">
-                            <span className="text-sm font-medium text-primary">
-                              {staff.name
-                                .split(' ')
-                                .map((n) => n[0])
-                                .join('')}
-                            </span>
-                          </div>
-                        )}
-                        <div>
-                          <span className="font-medium text-white block">{staff.name}</span>
-                          <span className="text-xs text-slate-400">{staff.email}</span>
-                        </div>
-                      </div>
-                    </td>
-                    <td className="py-4 px-6">
-                      <span className="font-mono text-sm text-primary font-medium">{staff.staffNumber}</span>
-                    </td>
-                    <td className="py-4 px-6 text-slate-400">{staff.department}</td>
-                    <td className="py-4 px-6">
-                      <StatusBadge status={staff.status} showPulse={false} />
-                    </td>
-                    <td className="py-4 px-6 text-white capitalize">{staff.activity.replace('-', ' ')}</td>
-                    <td className="py-4 px-6 text-slate-400">{staff.clockInTime}</td>
-                    <td className="py-4 px-6">
-                      <span className="font-medium text-white">
-                        {staff.hoursToday > 0 ? `${staff.hoursToday}h` : '—'}
-                      </span>
-                    </td>
-                    <td className="py-4 px-6">
-                      <span className={`px-2 py-1 rounded-full text-xs font-medium ${
-                        staff.isApproved 
-                          ? 'bg-success/10 text-success' 
-                          : 'bg-warning/10 text-warning'
-                      }`}>
-                        {staff.isApproved ? 'Yes' : 'Pending'}
-                      </span>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-
-          {filteredStaff.length === 0 && (
-            <div className="py-12 text-center text-muted-foreground">
-              <p>No staff members found matching your criteria</p>
-            </div>
-          )}
-        </div>
+        {/* Staff Management Table */}
+        <StaffManagementTable
+          staff={staffList}
+          departments={departments}
+          onApprove={handleApprove}
+          onDecline={handleDecline}
+          onDelete={(userId, name) => setDeleteDialog({ open: true, userId, name })}
+          onEdit={(staff) => setEditDialog({ open: true, staff })}
+          onViewHistory={(userId, name) => setHistoryDialog({ open: true, userId, name })}
+          onReassignDepartment={(staff) => setDepartmentDialog({ open: true, staff })}
+          onSetWorkStatus={(staff) => setWorkStatusDialog({ open: true, staff })}
+        />
       </main>
+
+      {/* Dialogs */}
+      <StaffEditDialog
+        open={editDialog.open}
+        onOpenChange={(open) => setEditDialog({ open, staff: open ? editDialog.staff : null })}
+        staff={editDialog.staff}
+        departments={departments}
+        onSave={handleEditSave}
+      />
+
+      <StaffHistoryDialog
+        open={historyDialog.open}
+        onOpenChange={(open) =>
+          setHistoryDialog({ open, userId: open ? historyDialog.userId : null, name: historyDialog.name })
+        }
+        userId={historyDialog.userId}
+        staffName={historyDialog.name}
+      />
+
+      <WorkStatusDialog
+        open={workStatusDialog.open}
+        onOpenChange={(open) => setWorkStatusDialog({ open, staff: open ? workStatusDialog.staff : null })}
+        staff={workStatusDialog.staff}
+        onSave={handleWorkStatusSave}
+      />
+
+      <DepartmentDialog
+        open={departmentDialog.open}
+        onOpenChange={(open) => setDepartmentDialog({ open, staff: open ? departmentDialog.staff : null })}
+        staff={departmentDialog.staff}
+        onSave={handleDepartmentSave}
+      />
+
+      <DeleteConfirmDialog
+        open={deleteDialog.open}
+        onOpenChange={(open) => setDeleteDialog({ open, userId: '', name: '' })}
+        staffName={deleteDialog.name}
+        onConfirm={handleDelete}
+        loading={deleteLoading}
+      />
     </div>
   );
 }
