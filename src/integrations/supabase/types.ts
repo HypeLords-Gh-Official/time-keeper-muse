@@ -84,6 +84,7 @@ export type Database = {
           staff_number: string | null
           updated_at: string
           user_id: string
+          work_status: string | null
         }
         Insert: {
           created_at?: string
@@ -97,6 +98,7 @@ export type Database = {
           staff_number?: string | null
           updated_at?: string
           user_id: string
+          work_status?: string | null
         }
         Update: {
           created_at?: string
@@ -110,6 +112,7 @@ export type Database = {
           staff_number?: string | null
           updated_at?: string
           user_id?: string
+          work_status?: string | null
         }
         Relationships: []
       }
