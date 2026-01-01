@@ -81,6 +81,7 @@ export type Database = {
           is_approved: boolean | null
           profile_photo_url: string | null
           qr_code: string
+          qr_token: string | null
           staff_number: string | null
           updated_at: string
           user_id: string
@@ -95,6 +96,7 @@ export type Database = {
           is_approved?: boolean | null
           profile_photo_url?: string | null
           qr_code: string
+          qr_token?: string | null
           staff_number?: string | null
           updated_at?: string
           user_id: string
@@ -109,6 +111,7 @@ export type Database = {
           is_approved?: boolean | null
           profile_photo_url?: string | null
           qr_code?: string
+          qr_token?: string | null
           staff_number?: string | null
           updated_at?: string
           user_id?: string

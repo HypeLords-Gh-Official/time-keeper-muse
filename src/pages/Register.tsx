@@ -9,7 +9,7 @@ import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { toast } from 'sonner';
 import { supabase } from '@/integrations/supabase/client';
-import { generateQRCode } from '@/lib/qrcode';
+import { generateQRToken } from '@/lib/qrcode';
 import { Camera, Loader2, ArrowLeft, UserPlus, CheckCircle2 } from 'lucide-react';
 
 type RegistrationStep = 'form' | 'photo' | 'success';
@@ -39,7 +39,7 @@ export default function Register() {
   // Photo and QR state
   const [profilePhoto, setProfilePhoto] = useState<Blob | null>(null);
   const [showCamera, setShowCamera] = useState(false);
-  const [generatedQRCode, setGeneratedQRCode] = useState<string | null>(null);
+  const [generatedQRToken, setGeneratedQRToken] = useState<string | null>(null);
   const [staffNumber, setStaffNumber] = useState<string | null>(null);
 
   const handleFormSubmit = async (e: React.FormEvent) => {
@@ -88,7 +88,9 @@ export default function Register() {
       if (!authData.user) throw new Error('Failed to create user');
 
       const userId = authData.user.id;
-      const qrCode = generateQRCode(userId);
+      
+      // Generate secure QR token for login
+      const qrToken = generateQRToken();
 
       // 2. Upload profile photo
       const photoPath = `${userId}/profile.jpg`;
@@ -109,7 +111,7 @@ export default function Register() {
         .from('profile-photos')
         .getPublicUrl(photoPath);
 
-      // 3. Create profile
+      // 3. Create profile with QR token for instant login
       const { error: profileError } = await supabase
         .from('profiles')
         .insert({
@@ -118,7 +120,8 @@ export default function Register() {
           email: email,
           department: department,
           profile_photo_url: urlData?.publicUrl || null,
-          qr_code: qrCode,
+          qr_code: qrToken, // Display QR code uses the token
+          qr_token: qrToken, // Secure token for authentication
           is_approved: false,
         });
 
@@ -144,7 +147,7 @@ export default function Register() {
 
       const staffNumber = createdProfile?.staff_number;
 
-      setGeneratedQRCode(qrCode);
+      setGeneratedQRToken(qrToken);
       setStaffNumber(staffNumber || null);
       setStep('success');
       toast.success('Registration successful!');
@@ -162,7 +165,7 @@ export default function Register() {
     setStep('form');
   };
 
-  if (step === 'success' && generatedQRCode) {
+  if (step === 'success' && generatedQRToken) {
     return (
       <div className="min-h-screen gradient-warm pattern-adinkra flex flex-col">
         <header className="p-6">
@@ -180,7 +183,7 @@ export default function Register() {
                 Welcome, {fullName}!
               </h1>
               <p className="text-muted-foreground mb-4">
-                Your account has been created. Save your QR code to log in quickly.
+                Your account has been created. Save your QR code to log in instantly.
               </p>
 
               {staffNumber && (
@@ -193,7 +196,7 @@ export default function Register() {
                 </div>
               )}
 
-              <QRCodeDisplay value={generatedQRCode} userName={fullName} />
+              <QRCodeDisplay value={generatedQRToken} userName={fullName} />
 
               <div className="mt-8 p-4 bg-warning/10 rounded-xl">
                 <p className="text-sm text-warning-foreground">

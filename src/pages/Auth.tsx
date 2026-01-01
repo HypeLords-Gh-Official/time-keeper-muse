@@ -8,7 +8,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { toast } from 'sonner';
 import { supabase } from '@/integrations/supabase/client';
-import { QrCode, Mail, Loader2, UserPlus, Hash } from 'lucide-react';
+import { QrCode, Mail, Loader2, Hash } from 'lucide-react';
 
 type LoginMethod = 'email' | 'qr' | 'staffNumber';
 type LoginStep = 'method' | 'credentials' | 'scan';
@@ -25,46 +25,45 @@ export default function Auth() {
   
   // Staff number login
   const [staffNumber, setStaffNumber] = useState('');
-  
-  // QR login
-  const [scannedQRCode, setScannedQRCode] = useState<string | null>(null);
 
   // Check if already logged in
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => {
       if (session) {
-        navigate('/dashboard');
+        redirectBasedOnRole(session.user.id);
       }
     });
   }, [navigate]);
+
+  const redirectBasedOnRole = async (userId: string) => {
+    const { data: roleData } = await supabase
+      .from('user_roles')
+      .select('role')
+      .eq('user_id', userId)
+      .maybeSingle();
+
+    if (roleData?.role === 'admin') {
+      navigate('/admin');
+    } else {
+      navigate('/dashboard');
+    }
+  };
 
   const handleEmailLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
 
     try {
-      const { error } = await supabase.auth.signInWithPassword({
+      const { data, error } = await supabase.auth.signInWithPassword({
         email,
         password,
       });
 
       if (error) throw error;
 
-      // Check user role and redirect accordingly
-      const { data: { session } } = await supabase.auth.getSession();
-      if (session) {
-        const { data: roleData } = await supabase
-          .from('user_roles')
-          .select('role')
-          .eq('user_id', session.user.id)
-          .maybeSingle();
-
-        toast.success('Login successful!');
-        if (roleData?.role === 'admin') {
-          navigate('/admin');
-        } else {
-          navigate('/dashboard');
-        }
+      toast.success('Login successful!');
+      if (data.session) {
+        await redirectBasedOnRole(data.session.user.id);
       }
     } catch (error: any) {
       console.error('Login error:', error);
@@ -100,28 +99,16 @@ export default function Auth() {
         return;
       }
 
-      const { error } = await supabase.auth.signInWithPassword({
+      const { data, error } = await supabase.auth.signInWithPassword({
         email: profile.email,
         password,
       });
 
       if (error) throw error;
 
-      // Check user role and redirect accordingly
-      const { data: { session } } = await supabase.auth.getSession();
-      if (session) {
-        const { data: roleData } = await supabase
-          .from('user_roles')
-          .select('role')
-          .eq('user_id', session.user.id)
-          .maybeSingle();
-
-        toast.success('Login successful!');
-        if (roleData?.role === 'admin') {
-          navigate('/admin');
-        } else {
-          navigate('/dashboard');
-        }
+      toast.success('Login successful!');
+      if (data.session) {
+        await redirectBasedOnRole(data.session.user.id);
       }
     } catch (error: any) {
       console.error('Login error:', error);
@@ -131,77 +118,57 @@ export default function Auth() {
     }
   };
 
-  const handleQRScan = async (qrCode: string) => {
+  const handleQRScan = async (qrToken: string) => {
     setLoading(true);
-    setScannedQRCode(qrCode);
 
     try {
-      // Look up user by QR code
-      const { data: profile, error } = await supabase
-        .from('profiles')
-        .select('user_id, full_name, email, is_approved')
-        .eq('qr_code', qrCode)
-        .maybeSingle();
+      // Call edge function for instant QR login
+      const { data, error } = await supabase.functions.invoke('qr-login', {
+        body: { qr_token: qrToken },
+      });
 
-      if (error) throw error;
+      if (error) {
+        console.error('QR login edge function error:', error);
+        toast.error('Failed to verify QR code');
+        setStep('method');
+        setLoading(false);
+        return;
+      }
+
+      if (data.error) {
+        toast.error(data.error);
+        setStep('method');
+        setLoading(false);
+        return;
+      }
+
+      // Verify the OTP using the token hash
+      const { data: authData, error: authError } = await supabase.auth.verifyOtp({
+        email: data.email,
+        token: data.token_hash,
+        type: 'magiclink',
+      });
+
+      if (authError) {
+        console.error('OTP verification error:', authError);
+        toast.error('Login verification failed');
+        setStep('method');
+        setLoading(false);
+        return;
+      }
+
+      toast.success(`Welcome back, ${data.full_name}!`);
       
-      if (!profile) {
-        toast.error('Invalid QR code');
-        setStep('method');
-        return;
+      // Redirect based on role
+      if (data.role === 'admin') {
+        navigate('/admin');
+      } else {
+        navigate('/dashboard');
       }
-
-      if (!profile.is_approved) {
-        toast.error('Your account is pending approval');
-        setStep('method');
-        return;
-      }
-
-      // Store email for password entry
-      setEmail(profile.email);
-      toast.success(`Welcome back, ${profile.full_name}!`);
-      // Move to password entry
-      setStep('credentials');
     } catch (error: any) {
       console.error('QR scan error:', error);
       toast.error('Failed to verify QR code');
       setStep('method');
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const handleQRPasswordLogin = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setLoading(true);
-
-    try {
-      const { error } = await supabase.auth.signInWithPassword({
-        email,
-        password,
-      });
-
-      if (error) throw error;
-
-      // Check user role and redirect accordingly
-      const { data: { session } } = await supabase.auth.getSession();
-      if (session) {
-        const { data: roleData } = await supabase
-          .from('user_roles')
-          .select('role')
-          .eq('user_id', session.user.id)
-          .maybeSingle();
-
-        toast.success('Login successful!');
-        if (roleData?.role === 'admin') {
-          navigate('/admin');
-        } else {
-          navigate('/dashboard');
-        }
-      }
-    } catch (error: any) {
-      console.error('Login error:', error);
-      toast.error(error.message || 'Login failed');
     } finally {
       setLoading(false);
     }
@@ -242,6 +209,7 @@ export default function Auth() {
                 >
                   <QrCode className="w-6 h-6" />
                   Scan QR Code
+                  <span className="text-xs text-muted-foreground ml-auto">Instant</span>
                 </Button>
 
                 <Button
@@ -284,6 +252,19 @@ export default function Auth() {
           <p>© 2024 Nkyinkyim Museum. All rights reserved.</p>
         </footer>
       </div>
+    );
+  }
+
+  // QR Scanning screen
+  if (step === 'scan') {
+    return (
+      <QRScanner
+        onScan={handleQRScan}
+        onCancel={() => {
+          setStep('method');
+          setLoading(false);
+        }}
+      />
     );
   }
 
@@ -436,80 +417,6 @@ export default function Auth() {
           <p>© 2024 Nkyinkyim Museum. All rights reserved.</p>
         </footer>
       </div>
-    );
-  }
-
-  // QR Password screen (after QR scan)
-  if (step === 'credentials' && method === 'qr') {
-    return (
-      <div className="min-h-screen gradient-warm pattern-adinkra flex flex-col">
-        <header className="p-6">
-          <Logo size="md" />
-        </header>
-
-        <main className="flex-1 flex flex-col items-center justify-center px-4 pb-12">
-          <div className="w-full max-w-md animate-fade-in">
-            <div className="bg-card rounded-3xl shadow-elevated border p-8 animate-slide-up">
-              <div className="text-center mb-8">
-                <div className="w-14 h-14 bg-success/10 rounded-full flex items-center justify-center mx-auto mb-4">
-                  <QrCode className="w-7 h-7 text-success" />
-                </div>
-                <h1 className="font-display text-2xl font-bold text-foreground mb-2">
-                  QR Code Verified!
-                </h1>
-                <p className="text-muted-foreground">
-                  Enter your password to complete login
-                </p>
-              </div>
-
-              <form onSubmit={handleQRPasswordLogin} className="space-y-5">
-                <div className="space-y-2">
-                  <Label htmlFor="password">Password</Label>
-                  <Input
-                    id="password"
-                    type="password"
-                    placeholder="Enter your password"
-                    value={password}
-                    onChange={(e) => setPassword(e.target.value)}
-                    required
-                  />
-                </div>
-
-                <Button
-                  type="submit"
-                  disabled={loading}
-                  className="w-full gap-2 gradient-primary text-primary-foreground"
-                >
-                  {loading && <Loader2 className="w-4 h-4 animate-spin" />}
-                  Complete Login
-                </Button>
-              </form>
-
-              <Button
-                onClick={() => setStep('method')}
-                variant="ghost"
-                className="w-full mt-4"
-              >
-                Cancel
-              </Button>
-            </div>
-          </div>
-        </main>
-
-        <footer className="p-6 text-center text-sm text-muted-foreground">
-          <p>© 2024 Nkyinkyim Museum. All rights reserved.</p>
-        </footer>
-      </div>
-    );
-  }
-
-  // QR Scanner screen
-  if (step === 'scan') {
-    return (
-      <QRScanner
-        onScan={handleQRScan}
-        onCancel={() => setStep('method')}
-      />
     );
   }
 
