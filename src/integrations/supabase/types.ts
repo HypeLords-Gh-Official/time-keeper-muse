@@ -44,6 +44,42 @@ export type Database = {
         }
         Relationships: []
       }
+      login_activity: {
+        Row: {
+          device_info: string | null
+          failure_reason: string | null
+          id: string
+          ip_address: string | null
+          login_at: string
+          login_method: string
+          success: boolean
+          user_agent: string | null
+          user_id: string
+        }
+        Insert: {
+          device_info?: string | null
+          failure_reason?: string | null
+          id?: string
+          ip_address?: string | null
+          login_at?: string
+          login_method: string
+          success?: boolean
+          user_agent?: string | null
+          user_id: string
+        }
+        Update: {
+          device_info?: string | null
+          failure_reason?: string | null
+          id?: string
+          ip_address?: string | null
+          login_at?: string
+          login_method?: string
+          success?: boolean
+          user_agent?: string | null
+          user_id?: string
+        }
+        Relationships: []
+      }
       login_verifications: {
         Row: {
           id: string
