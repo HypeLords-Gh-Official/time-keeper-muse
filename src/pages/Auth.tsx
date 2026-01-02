@@ -13,6 +13,28 @@ import { QrCode, Mail, Loader2, Hash } from 'lucide-react';
 type LoginMethod = 'email' | 'qr' | 'staffNumber';
 type LoginStep = 'method' | 'credentials' | 'scan';
 
+// Helper to log login activity
+const logLoginActivity = async (
+  userId: string,
+  loginMethod: string,
+  success: boolean,
+  failureReason?: string
+) => {
+  try {
+    await supabase.from('login_activity').insert({
+      user_id: userId,
+      login_method: loginMethod,
+      ip_address: null, // Can't reliably get client IP from browser
+      user_agent: navigator.userAgent,
+      device_info: `${navigator.platform} - ${navigator.language}`,
+      success,
+      failure_reason: failureReason,
+    });
+  } catch (error) {
+    console.error('Failed to log login activity:', error);
+  }
+};
+
 export default function Auth() {
   const navigate = useNavigate();
   const [method, setMethod] = useState<LoginMethod>('email');
@@ -63,6 +85,7 @@ export default function Auth() {
 
       toast.success('Login successful!');
       if (data.session) {
+        await logLoginActivity(data.session.user.id, 'email', true);
         await redirectBasedOnRole(data.session.user.id);
       }
     } catch (error: any) {
@@ -81,7 +104,7 @@ export default function Auth() {
       // Look up email by staff number
       const { data: profile, error: lookupError } = await supabase
         .from('profiles')
-        .select('email, is_approved')
+        .select('email, is_approved, user_id')
         .eq('staff_number', staffNumber.toUpperCase())
         .maybeSingle();
 
@@ -108,6 +131,7 @@ export default function Auth() {
 
       toast.success('Login successful!');
       if (data.session) {
+        await logLoginActivity(data.session.user.id, 'staff_number', true);
         await redirectBasedOnRole(data.session.user.id);
       }
     } catch (error: any) {
@@ -158,6 +182,11 @@ export default function Auth() {
       }
 
       toast.success(`Welcome back, ${data.full_name}!`);
+      
+      // Log login activity for QR login
+      if (authData.session) {
+        await logLoginActivity(authData.session.user.id, 'qr', true);
+      }
       
       // Redirect based on role
       if (data.role === 'admin') {
