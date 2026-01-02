@@ -26,6 +26,7 @@ import {
   Edit,
   History,
   Building2,
+  QrCode,
   Calendar,
 } from 'lucide-react';
 
@@ -55,6 +56,7 @@ interface StaffManagementTableProps {
   onViewHistory: (userId: string, name: string) => void;
   onReassignDepartment: (staff: StaffMember) => void;
   onSetWorkStatus: (staff: StaffMember) => void;
+  onRegenerateQR: (staff: StaffMember) => void;
 }
 
 export function StaffManagementTable({
@@ -67,6 +69,7 @@ export function StaffManagementTable({
   onViewHistory,
   onReassignDepartment,
   onSetWorkStatus,
+  onRegenerateQR,
 }: StaffManagementTableProps) {
   const [searchQuery, setSearchQuery] = useState('');
   const [filterDepartment, setFilterDepartment] = useState('all');
@@ -285,6 +288,10 @@ export function StaffManagementTable({
                       <DropdownMenuItem onClick={() => onSetWorkStatus(staff)}>
                         <Calendar className="w-4 h-4 mr-2" />
                         Set Work Status
+                      </DropdownMenuItem>
+                      <DropdownMenuItem onClick={() => onRegenerateQR(staff)}>
+                        <QrCode className="w-4 h-4 mr-2" />
+                        Regenerate QR
                       </DropdownMenuItem>
                       <DropdownMenuSeparator />
                       <DropdownMenuItem
