@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Logo } from '@/components/Logo';
 import { Button } from '@/components/ui/button';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
 import {
@@ -15,6 +16,7 @@ import {
   Loader2,
   UserCheck,
   UserX,
+  Activity,
 } from 'lucide-react';
 import { differenceInMinutes } from 'date-fns';
 import { StaffManagementTable, StaffMember } from '@/components/admin/StaffManagementTable';
@@ -23,6 +25,8 @@ import { StaffHistoryDialog } from '@/components/admin/StaffHistoryDialog';
 import { WorkStatusDialog } from '@/components/admin/WorkStatusDialog';
 import { DepartmentDialog } from '@/components/admin/DepartmentDialog';
 import { DeleteConfirmDialog } from '@/components/admin/DeleteConfirmDialog';
+import { LoginActivityPanel } from '@/components/admin/LoginActivityPanel';
+import { RegenerateQRDialog } from '@/components/admin/RegenerateQRDialog';
 
 interface ProfileRow {
   id: string;
@@ -83,7 +87,12 @@ export default function Admin() {
     userId: '',
     name: '',
   });
+  const [qrDialog, setQrDialog] = useState<{ open: boolean; staff: StaffMember | null }>({
+    open: false,
+    staff: null,
+  });
   const [deleteLoading, setDeleteLoading] = useState(false);
+  const [activeTab, setActiveTab] = useState('staff');
 
   useEffect(() => {
     fetchStaffData();
@@ -427,18 +436,39 @@ export default function Admin() {
           ))}
         </div>
 
-        {/* Staff Management Table */}
-        <StaffManagementTable
-          staff={staffList}
-          departments={departments}
-          onApprove={handleApprove}
-          onDecline={handleDecline}
-          onDelete={(userId, name) => setDeleteDialog({ open: true, userId, name })}
-          onEdit={(staff) => setEditDialog({ open: true, staff })}
-          onViewHistory={(userId, name) => setHistoryDialog({ open: true, userId, name })}
-          onReassignDepartment={(staff) => setDepartmentDialog({ open: true, staff })}
-          onSetWorkStatus={(staff) => setWorkStatusDialog({ open: true, staff })}
-        />
+        {/* Tabs for Staff and Login Activity */}
+        <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-6">
+          <TabsList className="bg-slate-800/50 border border-slate-700">
+            <TabsTrigger value="staff" className="data-[state=active]:bg-slate-700 data-[state=active]:text-white">
+              <Users className="w-4 h-4 mr-2" />
+              Staff Management
+            </TabsTrigger>
+            <TabsTrigger value="activity" className="data-[state=active]:bg-slate-700 data-[state=active]:text-white">
+              <Activity className="w-4 h-4 mr-2" />
+              Login Activity
+            </TabsTrigger>
+          </TabsList>
+
+          <TabsContent value="staff">
+            {/* Staff Management Table */}
+            <StaffManagementTable
+              staff={staffList}
+              departments={departments}
+              onApprove={handleApprove}
+              onDecline={handleDecline}
+              onDelete={(userId, name) => setDeleteDialog({ open: true, userId, name })}
+              onEdit={(staff) => setEditDialog({ open: true, staff })}
+              onViewHistory={(userId, name) => setHistoryDialog({ open: true, userId, name })}
+              onReassignDepartment={(staff) => setDepartmentDialog({ open: true, staff })}
+              onSetWorkStatus={(staff) => setWorkStatusDialog({ open: true, staff })}
+              onRegenerateQR={(staff) => setQrDialog({ open: true, staff })}
+            />
+          </TabsContent>
+
+          <TabsContent value="activity">
+            <LoginActivityPanel />
+          </TabsContent>
+        </Tabs>
       </main>
 
       {/* Dialogs */}
@@ -479,6 +509,14 @@ export default function Admin() {
         staffName={deleteDialog.name}
         onConfirm={handleDelete}
         loading={deleteLoading}
+      />
+
+      <RegenerateQRDialog
+        open={qrDialog.open}
+        onOpenChange={(open) => setQrDialog({ open, staff: open ? qrDialog.staff : null })}
+        userId={qrDialog.staff?.user_id || ''}
+        staffName={qrDialog.staff?.name || ''}
+        onSuccess={() => fetchStaffData()}
       />
     </div>
   );
