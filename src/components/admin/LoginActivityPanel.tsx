@@ -18,7 +18,14 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
 import { Badge } from '@/components/ui/badge';
+import { toast } from 'sonner';
 import {
   Search,
   Filter,
@@ -31,6 +38,9 @@ import {
   CreditCard,
   ChevronLeft,
   ChevronRight,
+  Download,
+  FileText,
+  FileSpreadsheet,
 } from 'lucide-react';
 
 interface LoginActivity {
@@ -52,7 +62,9 @@ interface LoginActivity {
 
 export function LoginActivityPanel() {
   const [activities, setActivities] = useState<LoginActivity[]>([]);
+  const [allActivities, setAllActivities] = useState<LoginActivity[]>([]);
   const [loading, setLoading] = useState(true);
+  const [exporting, setExporting] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [methodFilter, setMethodFilter] = useState<string>('all');
   const [dateFilter, setDateFilter] = useState<string>('7days');
@@ -60,25 +72,29 @@ export function LoginActivityPanel() {
   const [totalCount, setTotalCount] = useState(0);
   const pageSize = 10;
 
+  const getDateRange = () => {
+    let startDate = new Date();
+    switch (dateFilter) {
+      case 'today':
+        startDate.setHours(0, 0, 0, 0);
+        break;
+      case '7days':
+        startDate.setDate(startDate.getDate() - 7);
+        break;
+      case '30days':
+        startDate.setDate(startDate.getDate() - 30);
+        break;
+      case 'all':
+        startDate = new Date('2020-01-01');
+        break;
+    }
+    return startDate;
+  };
+
   const fetchActivities = async () => {
     setLoading(true);
     try {
-      // Calculate date range
-      let startDate = new Date();
-      switch (dateFilter) {
-        case 'today':
-          startDate.setHours(0, 0, 0, 0);
-          break;
-        case '7days':
-          startDate.setDate(startDate.getDate() - 7);
-          break;
-        case '30days':
-          startDate.setDate(startDate.getDate() - 30);
-          break;
-        case 'all':
-          startDate = new Date('2020-01-01');
-          break;
-      }
+      const startDate = getDateRange();
 
       // Fetch login activities
       let query = supabase
@@ -124,6 +140,176 @@ export function LoginActivityPanel() {
     }
   };
 
+  const fetchAllForExport = async (): Promise<LoginActivity[]> => {
+    const startDate = getDateRange();
+
+    let query = supabase
+      .from('login_activity')
+      .select('*')
+      .gte('login_at', startDate.toISOString())
+      .order('login_at', { ascending: false });
+
+    if (methodFilter !== 'all') {
+      query = query.eq('login_method', methodFilter);
+    }
+
+    const { data: loginData, error } = await query;
+
+    if (error) throw error;
+
+    if (loginData && loginData.length > 0) {
+      const userIds = [...new Set(loginData.map(a => a.user_id))];
+      const { data: profiles } = await supabase
+        .from('profiles')
+        .select('user_id, full_name, email, staff_number')
+        .in('user_id', userIds);
+
+      const profileMap = new Map(profiles?.map(p => [p.user_id, p]) || []);
+
+      return loginData.map(activity => ({
+        ...activity,
+        profile: profileMap.get(activity.user_id) || undefined,
+      }));
+    }
+
+    return [];
+  };
+
+  const getMethodLabel = (method: string) => {
+    switch (method) {
+      case 'qr':
+        return 'QR Code';
+      case 'email':
+        return 'Email';
+      case 'staff_number':
+        return 'Staff ID';
+      default:
+        return method;
+    }
+  };
+
+  const exportToCSV = async () => {
+    setExporting(true);
+    try {
+      const data = await fetchAllForExport();
+      
+      const headers = ['Staff Name', 'Staff Number', 'Email', 'Login Method', 'Device', 'Date', 'Time', 'Status'];
+      const rows = data.map(activity => [
+        activity.profile?.full_name || 'Unknown',
+        activity.profile?.staff_number || '-',
+        activity.profile?.email || '-',
+        getMethodLabel(activity.login_method),
+        activity.device_info || 'Unknown device',
+        format(new Date(activity.login_at), 'yyyy-MM-dd'),
+        format(new Date(activity.login_at), 'HH:mm:ss'),
+        activity.success ? 'Success' : 'Failed',
+      ]);
+
+      const csvContent = [
+        headers.join(','),
+        ...rows.map(row => row.map(cell => `"${String(cell).replace(/"/g, '""')}"`).join(','))
+      ].join('\n');
+
+      const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = `login-activity-${format(new Date(), 'yyyy-MM-dd')}.csv`;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      URL.revokeObjectURL(url);
+
+      toast.success('CSV exported successfully');
+    } catch (error) {
+      console.error('Error exporting CSV:', error);
+      toast.error('Failed to export CSV');
+    } finally {
+      setExporting(false);
+    }
+  };
+
+  const exportToPDF = async () => {
+    setExporting(true);
+    try {
+      const data = await fetchAllForExport();
+      
+      // Create PDF content as HTML and open in new window for printing
+      const dateRange = dateFilter === 'today' ? 'Today' : 
+                        dateFilter === '7days' ? 'Last 7 Days' :
+                        dateFilter === '30days' ? 'Last 30 Days' : 'All Time';
+      
+      const htmlContent = `
+        <!DOCTYPE html>
+        <html>
+        <head>
+          <title>Login Activity Report</title>
+          <style>
+            body { font-family: Arial, sans-serif; padding: 20px; }
+            h1 { color: #1e293b; margin-bottom: 5px; }
+            .subtitle { color: #64748b; margin-bottom: 20px; }
+            table { width: 100%; border-collapse: collapse; margin-top: 20px; }
+            th, td { border: 1px solid #e2e8f0; padding: 10px; text-align: left; font-size: 12px; }
+            th { background-color: #f1f5f9; font-weight: 600; color: #334155; }
+            tr:nth-child(even) { background-color: #f8fafc; }
+            .success { color: #16a34a; font-weight: 500; }
+            .failed { color: #dc2626; font-weight: 500; }
+            .footer { margin-top: 20px; font-size: 11px; color: #94a3b8; }
+            @media print {
+              body { padding: 0; }
+              .no-print { display: none; }
+            }
+          </style>
+        </head>
+        <body>
+          <h1>Login Activity Report</h1>
+          <p class="subtitle">Date Range: ${dateRange} | Generated: ${format(new Date(), 'MMM d, yyyy h:mm a')}</p>
+          <table>
+            <thead>
+              <tr>
+                <th>Staff Name</th>
+                <th>Staff Number</th>
+                <th>Login Method</th>
+                <th>Device</th>
+                <th>Date & Time</th>
+                <th>Status</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${data.map(activity => `
+                <tr>
+                  <td>${activity.profile?.full_name || 'Unknown'}</td>
+                  <td>${activity.profile?.staff_number || '-'}</td>
+                  <td>${getMethodLabel(activity.login_method)}</td>
+                  <td>${activity.device_info || 'Unknown device'}</td>
+                  <td>${format(new Date(activity.login_at), 'MMM d, yyyy h:mm a')}</td>
+                  <td class="${activity.success ? 'success' : 'failed'}">${activity.success ? 'Success' : 'Failed'}</td>
+                </tr>
+              `).join('')}
+            </tbody>
+          </table>
+          <p class="footer">Total records: ${data.length}</p>
+          <button class="no-print" onclick="window.print()" style="margin-top: 20px; padding: 10px 20px; cursor: pointer;">Print / Save as PDF</button>
+        </body>
+        </html>
+      `;
+
+      const printWindow = window.open('', '_blank');
+      if (printWindow) {
+        printWindow.document.write(htmlContent);
+        printWindow.document.close();
+        toast.success('PDF report opened in new tab');
+      } else {
+        toast.error('Please allow popups to export PDF');
+      }
+    } catch (error) {
+      console.error('Error exporting PDF:', error);
+      toast.error('Failed to export PDF');
+    } finally {
+      setExporting(false);
+    }
+  };
+
   useEffect(() => {
     fetchActivities();
   }, [methodFilter, dateFilter, page]);
@@ -152,19 +338,6 @@ export function LoginActivityPanel() {
     }
   };
 
-  const getMethodLabel = (method: string) => {
-    switch (method) {
-      case 'qr':
-        return 'QR Code';
-      case 'email':
-        return 'Email';
-      case 'staff_number':
-        return 'Staff ID';
-      default:
-        return method;
-    }
-  };
-
   const getDeviceIcon = (userAgent: string | null) => {
     if (!userAgent) return <Globe className="w-4 h-4 text-muted-foreground" />;
     if (userAgent.toLowerCase().includes('mobile')) {
@@ -183,16 +356,45 @@ export function LoginActivityPanel() {
           <h2 className="text-xl font-bold text-white">Login Activity</h2>
           <p className="text-sm text-slate-400">Track staff login history and patterns</p>
         </div>
-        <Button
-          variant="outline"
-          size="sm"
-          onClick={fetchActivities}
-          disabled={loading}
-          className="border-slate-600 text-slate-300 hover:bg-slate-700 hover:text-white"
-        >
-          <RefreshCw className={`w-4 h-4 mr-2 ${loading ? 'animate-spin' : ''}`} />
-          Refresh
-        </Button>
+        <div className="flex items-center gap-2">
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button
+                variant="outline"
+                size="sm"
+                disabled={exporting || loading}
+                className="border-slate-600 text-slate-300 hover:bg-slate-700 hover:text-white"
+              >
+                {exporting ? (
+                  <RefreshCw className="w-4 h-4 mr-2 animate-spin" />
+                ) : (
+                  <Download className="w-4 h-4 mr-2" />
+                )}
+                Export
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" className="bg-slate-800 border-slate-600">
+              <DropdownMenuItem onClick={exportToCSV} className="text-slate-200 hover:bg-slate-700">
+                <FileSpreadsheet className="w-4 h-4 mr-2" />
+                Export as CSV
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={exportToPDF} className="text-slate-200 hover:bg-slate-700">
+                <FileText className="w-4 h-4 mr-2" />
+                Export as PDF
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={fetchActivities}
+            disabled={loading}
+            className="border-slate-600 text-slate-300 hover:bg-slate-700 hover:text-white"
+          >
+            <RefreshCw className={`w-4 h-4 mr-2 ${loading ? 'animate-spin' : ''}`} />
+            Refresh
+          </Button>
+        </div>
       </div>
 
       {/* Filters */}
