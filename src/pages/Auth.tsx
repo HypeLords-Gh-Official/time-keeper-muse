@@ -313,7 +313,7 @@ export default function Auth() {
         </main>
 
         <footer className="p-6 text-center text-sm text-muted-foreground">
-          <p>© 2024 Nkyinkyim Museum. All rights reserved.</p>
+          <p>© 2026 | Nkyinkyim Museum - Ancestor Project | All Rights Reserved | Powered by HypeLords Technology</p>
         </footer>
       </div>
     );
@@ -402,7 +402,7 @@ export default function Auth() {
         </main>
 
         <footer className="p-6 text-center text-sm text-muted-foreground">
-          <p>© 2024 Nkyinkyim Museum. All rights reserved.</p>
+          <p>© 2026 | Nkyinkyim Museum - Ancestor Project | All Rights Reserved | Powered by HypeLords Technology</p>
         </footer>
       </div>
     );
@@ -467,7 +467,7 @@ export default function Auth() {
         </main>
 
         <footer className="p-6 text-center text-sm text-muted-foreground">
-          <p>© 2024 Nkyinkyim Museum. All rights reserved.</p>
+          <p>© 2026 | Nkyinkyim Museum - Ancestor Project | All Rights Reserved | Powered by HypeLords Technology</p>
         </footer>
       </div>
     );
