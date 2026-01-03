@@ -28,26 +28,15 @@ interface DepartmentDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   staff: StaffMember | null;
+  departments: string[];
   onSave: (userId: string, department: string) => Promise<void>;
 }
-
-const DEPARTMENTS = [
-  'Administration',
-  'Human Resources',
-  'Finance',
-  'Operations',
-  'Marketing',
-  'Sales',
-  'IT',
-  'Customer Service',
-  'Research & Development',
-  'Legal',
-];
 
 export function DepartmentDialog({
   open,
   onOpenChange,
   staff,
+  departments,
   onSave,
 }: DepartmentDialogProps) {
   const [selectedDepartment, setSelectedDepartment] = useState('');
@@ -98,7 +87,7 @@ export function DepartmentDialog({
                 <SelectValue placeholder="Select new department" />
               </SelectTrigger>
               <SelectContent>
-                {DEPARTMENTS.map((dept) => (
+                {departments.map((dept) => (
                   <SelectItem key={dept} value={dept}>
                     {dept}
                   </SelectItem>

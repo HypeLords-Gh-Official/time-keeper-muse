@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import { Logo } from '@/components/Logo';
 import { CameraCapture } from '@/components/CameraCapture';
@@ -14,21 +14,11 @@ import { Camera, Loader2, ArrowLeft, UserPlus, CheckCircle2 } from 'lucide-react
 
 type RegistrationStep = 'form' | 'photo' | 'success';
 
-const DEPARTMENTS = [
-  'Tours',
-  'Exhibitions',
-  'Administration',
-  'Maintenance',
-  'Education',
-  'Gift Shop',
-  'Security',
-  'Cafe',
-];
-
 export default function Register() {
   const navigate = useNavigate();
   const [step, setStep] = useState<RegistrationStep>('form');
   const [loading, setLoading] = useState(false);
+  const [departments, setDepartments] = useState<string[]>([]);
   
   // Form state
   const [fullName, setFullName] = useState('');
@@ -41,6 +31,24 @@ export default function Register() {
   const [showCamera, setShowCamera] = useState(false);
   const [generatedQRToken, setGeneratedQRToken] = useState<string | null>(null);
   const [staffNumber, setStaffNumber] = useState<string | null>(null);
+
+  useEffect(() => {
+    const fetchDepartments = async () => {
+      try {
+        const { data, error } = await supabase
+          .from('departments')
+          .select('name')
+          .order('name');
+
+        if (error) throw error;
+        setDepartments(data?.map((d) => d.name) || []);
+      } catch (error) {
+        console.error('Error fetching departments:', error);
+      }
+    };
+
+    fetchDepartments();
+  }, []);
 
   const handleFormSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -291,7 +299,7 @@ export default function Register() {
                     <SelectValue placeholder="Select your department" />
                   </SelectTrigger>
                   <SelectContent>
-                    {DEPARTMENTS.map((dept) => (
+                    {departments.map((dept) => (
                       <SelectItem key={dept} value={dept}>
                         {dept}
                       </SelectItem>

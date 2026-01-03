@@ -17,6 +17,7 @@ import {
   UserCheck,
   UserX,
   Activity,
+  Building2,
 } from 'lucide-react';
 import { differenceInMinutes } from 'date-fns';
 import { StaffManagementTable, StaffMember } from '@/components/admin/StaffManagementTable';
@@ -24,6 +25,7 @@ import { StaffEditDialog } from '@/components/admin/StaffEditDialog';
 import { StaffHistoryDialog } from '@/components/admin/StaffHistoryDialog';
 import { WorkStatusDialog } from '@/components/admin/WorkStatusDialog';
 import { DepartmentDialog } from '@/components/admin/DepartmentDialog';
+import { DepartmentManagement } from '@/components/admin/DepartmentManagement';
 import { DeleteConfirmDialog } from '@/components/admin/DeleteConfirmDialog';
 import { LoginActivityPanel } from '@/components/admin/LoginActivityPanel';
 import { RegenerateQRDialog } from '@/components/admin/RegenerateQRDialog';
@@ -91,12 +93,28 @@ export default function Admin() {
     open: false,
     staff: null,
   });
+  const [departmentManagement, setDepartmentManagement] = useState(false);
   const [deleteLoading, setDeleteLoading] = useState(false);
   const [activeTab, setActiveTab] = useState('staff');
 
   useEffect(() => {
     fetchStaffData();
+    fetchDepartments();
   }, []);
+
+  const fetchDepartments = async () => {
+    try {
+      const { data, error } = await supabase
+        .from('departments')
+        .select('name')
+        .order('name');
+
+      if (error) throw error;
+      setDepartments(data?.map((d) => d.name) || []);
+    } catch (error) {
+      console.error('Error fetching departments:', error);
+    }
+  };
 
   const fetchStaffData = async (showRefresh = false) => {
     if (showRefresh) setRefreshing(true);
@@ -382,6 +400,15 @@ export default function Admin() {
             <Button
               variant="outline"
               size="sm"
+              onClick={() => setDepartmentManagement(true)}
+              className="border-slate-600 text-slate-300 hover:bg-slate-700 hover:text-white"
+            >
+              <Building2 className="w-4 h-4 mr-2" />
+              Departments
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
               onClick={() => fetchStaffData(true)}
               disabled={refreshing}
               className="border-slate-600 text-slate-300 hover:bg-slate-700 hover:text-white"
@@ -500,7 +527,14 @@ export default function Admin() {
         open={departmentDialog.open}
         onOpenChange={(open) => setDepartmentDialog({ open, staff: open ? departmentDialog.staff : null })}
         staff={departmentDialog.staff}
+        departments={departments}
         onSave={handleDepartmentSave}
+      />
+
+      <DepartmentManagement
+        open={departmentManagement}
+        onOpenChange={setDepartmentManagement}
+        onDepartmentsChange={fetchDepartments}
       />
 
       <DeleteConfirmDialog

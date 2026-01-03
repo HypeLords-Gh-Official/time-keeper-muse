@@ -35,23 +35,11 @@ interface StaffEditDialogProps {
   onSave: (userId: string, data: { full_name: string; email: string; department: string; staff_number: string }) => Promise<void>;
 }
 
-const DEPARTMENTS = [
-  'Administration',
-  'Human Resources',
-  'Finance',
-  'Operations',
-  'Marketing',
-  'Sales',
-  'IT',
-  'Customer Service',
-  'Research & Development',
-  'Legal',
-];
-
 export function StaffEditDialog({
   open,
   onOpenChange,
   staff,
+  departments,
   onSave,
 }: StaffEditDialogProps) {
   const [fullName, setFullName] = useState('');
@@ -131,7 +119,7 @@ export function StaffEditDialog({
                 <SelectValue placeholder="Select department" />
               </SelectTrigger>
               <SelectContent>
-                {DEPARTMENTS.map((dept) => (
+                {departments.map((dept) => (
                   <SelectItem key={dept} value={dept}>
                     {dept}
                   </SelectItem>
