@@ -2,3 +2,6 @@ project_id = "sjxblzivmvtnlvnobrni"
 
 [functions.qr-login]
 verify_jwt = false
+
+[functions.staff-id-login]
+verify_jwt = false

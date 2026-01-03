@@ -13,6 +13,29 @@ import { QrCode, Mail, Loader2, Hash } from 'lucide-react';
 type LoginMethod = 'email' | 'qr' | 'staffNumber';
 type LoginStep = 'method' | 'credentials' | 'scan';
 
+// Helper to log login activity without authentication requirement
+const logLoginActivityNoAuth = async (
+  userId: string,
+  loginMethod: string,
+  success: boolean,
+  failureReason?: string
+) => {
+  try {
+    // Use a separate insert after successful login when user is authenticated
+    await supabase.from('login_activity').insert({
+      user_id: userId,
+      login_method: loginMethod,
+      ip_address: null,
+      user_agent: navigator.userAgent,
+      device_info: `${navigator.platform} - ${navigator.language}`,
+      success,
+      failure_reason: failureReason,
+    });
+  } catch (error) {
+    console.error('Failed to log login activity:', error);
+  }
+};
+
 // Helper to log login activity
 const logLoginActivity = async (
   userId: string,
@@ -101,38 +124,50 @@ export default function Auth() {
     setLoading(true);
 
     try {
-      // Look up email by staff number
-      const { data: profile, error: lookupError } = await supabase
-        .from('profiles')
-        .select('email, is_approved, user_id')
-        .eq('staff_number', staffNumber.toUpperCase())
-        .maybeSingle();
-
-      if (lookupError) throw lookupError;
-      
-      if (!profile) {
-        toast.error('Invalid staff number');
-        setLoading(false);
-        return;
-      }
-
-      if (!profile.is_approved) {
-        toast.error('Your account is pending approval');
-        setLoading(false);
-        return;
-      }
-
-      const { data, error } = await supabase.auth.signInWithPassword({
-        email: profile.email,
-        password,
+      // Call edge function for instant staff ID login (no password required)
+      const { data, error } = await supabase.functions.invoke('staff-id-login', {
+        body: { staff_number: staffNumber },
       });
 
-      if (error) throw error;
+      if (error) {
+        console.error('Staff ID login edge function error:', error);
+        toast.error('Failed to verify staff number');
+        setLoading(false);
+        return;
+      }
 
-      toast.success('Login successful!');
-      if (data.session) {
-        await logLoginActivity(data.session.user.id, 'staff_number', true);
-        await redirectBasedOnRole(data.session.user.id);
+      if (data.error) {
+        toast.error(data.error);
+        setLoading(false);
+        return;
+      }
+
+      // Verify the OTP using the token hash
+      const { data: authData, error: authError } = await supabase.auth.verifyOtp({
+        email: data.email,
+        token: data.token_hash,
+        type: 'magiclink',
+      });
+
+      if (authError) {
+        console.error('OTP verification error:', authError);
+        toast.error('Login verification failed');
+        setLoading(false);
+        return;
+      }
+
+      toast.success(`Welcome back, ${data.full_name}!`);
+
+      // Log login activity
+      if (authData.session) {
+        await logLoginActivityNoAuth(authData.session.user.id, 'staff_number', true);
+      }
+
+      // Redirect based on role
+      if (data.role === 'admin') {
+        navigate('/admin');
+      } else {
+        navigate('/dashboard');
       }
     } catch (error: any) {
       console.error('Login error:', error);
@@ -373,7 +408,7 @@ export default function Auth() {
     );
   }
 
-  // Staff Number credentials screen
+  // Staff Number credentials screen (no password required)
   if (step === 'credentials' && method === 'staffNumber') {
     return (
       <div className="min-h-screen gradient-warm pattern-adinkra flex flex-col">
@@ -392,7 +427,7 @@ export default function Auth() {
                   Staff Number Login
                 </h1>
                 <p className="text-muted-foreground">
-                  Enter your staff number and password
+                  Enter your staff number to sign in instantly
                 </p>
               </div>
 
@@ -406,24 +441,13 @@ export default function Auth() {
                     value={staffNumber}
                     onChange={(e) => setStaffNumber(e.target.value)}
                     required
-                  />
-                </div>
-
-                <div className="space-y-2">
-                  <Label htmlFor="password">Password</Label>
-                  <Input
-                    id="password"
-                    type="password"
-                    placeholder="Enter your password"
-                    value={password}
-                    onChange={(e) => setPassword(e.target.value)}
-                    required
+                    autoFocus
                   />
                 </div>
 
                 <Button
                   type="submit"
-                  disabled={loading}
+                  disabled={loading || !staffNumber.trim()}
                   className="w-full gap-2 gradient-primary text-primary-foreground"
                 >
                   {loading && <Loader2 className="w-4 h-4 animate-spin" />}
