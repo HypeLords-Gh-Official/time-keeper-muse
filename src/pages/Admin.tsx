@@ -29,6 +29,8 @@ import { DepartmentManagement } from '@/components/admin/DepartmentManagement';
 import { DeleteConfirmDialog } from '@/components/admin/DeleteConfirmDialog';
 import { LoginActivityPanel } from '@/components/admin/LoginActivityPanel';
 import { RegenerateQRDialog } from '@/components/admin/RegenerateQRDialog';
+import { PasswordRequestsPanel } from '@/components/admin/PasswordRequestsPanel';
+import { Key } from 'lucide-react';
 
 interface ProfileRow {
   id: string;
@@ -474,6 +476,10 @@ export default function Admin() {
               <Activity className="w-4 h-4 mr-2" />
               Login Activity
             </TabsTrigger>
+            <TabsTrigger value="passwords" className="data-[state=active]:bg-slate-700 data-[state=active]:text-white">
+              <Key className="w-4 h-4 mr-2" />
+              Password Requests
+            </TabsTrigger>
           </TabsList>
 
           <TabsContent value="staff">
@@ -494,6 +500,10 @@ export default function Admin() {
 
           <TabsContent value="activity">
             <LoginActivityPanel />
+          </TabsContent>
+
+          <TabsContent value="passwords">
+            <PasswordRequestsPanel />
           </TabsContent>
         </Tabs>
       </main>
