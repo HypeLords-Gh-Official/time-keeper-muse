@@ -145,8 +145,8 @@ export default function Auth() {
       // Verify the OTP using the token hash
       const { data: authData, error: authError } = await supabase.auth.verifyOtp({
         email: data.email,
-        token: data.token_hash,
-        type: 'magiclink',
+        token_hash: data.token_hash,
+        type: 'email',
       });
 
       if (authError) {
@@ -204,8 +204,8 @@ export default function Auth() {
       // Verify the OTP using the token hash
       const { data: authData, error: authError } = await supabase.auth.verifyOtp({
         email: data.email,
-        token: data.token_hash,
-        type: 'magiclink',
+        token_hash: data.token_hash,
+        type: 'email',
       });
 
       if (authError) {
